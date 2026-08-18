@@ -1,16 +1,50 @@
+# =========================
 # Python
+# =========================
 __pycache__/
-*.pyc
-.venv/
+*.py[cod]
+*.pyo
+*.pyd
 
-# Node
+# Virtual environments
+.venv/
+venv/
+env/
+
+# =========================
+# Testing
+# =========================
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# =========================
+# Environment / Secrets
+# =========================
+.env
+.env.local
+.env.*.local
+
+# =========================
+# Node / Frontend
+# =========================
 node_modules/
 dist/
+build/
+.npm/
+*.log
 
-# Env
-.env
+# =========================
+# Uploaded runtime files
+# =========================
+backend/uploads/*
+!backend/uploads/.gitkeep
 
+# =========================
 # IDE / OS
+# =========================
 .vscode/
 .idea/
 .DS_Store
+Thumbs.db

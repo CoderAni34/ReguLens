@@ -15,7 +15,7 @@ Compliance teams often read large policy/regulatory documents manually and then 
 - **Frontend (React + Vite):** user-facing flows for upload, review, and tracking.
 - **Backend API (FastAPI):** domain endpoints and orchestration layer.
 - **AI Module (Python):** extraction/prompt/evaluation components behind a service boundary.
-- **Database (PostgreSQL + SQLAlchemy):** persistence for users, documents, obligations, tasks, and audit logs.
+- **Database (PostgreSQL + SQLAlchemy):** persistence for documents and extracted obligations.
 
 ### Simple Architecture Diagram
 
@@ -38,32 +38,23 @@ ReguLens/
 ├── backend/
 │   ├── app/
 │   │   ├── api/
-│   │   │   ├── routes/
-│   │   │   │   ├── documents.py
-│   │   │   │   ├── obligations.py
-│   │   │   │   ├── tasks.py
-│   │   │   │   └── users.py
-│   │   │   └── dependencies.py
+│   │   │   └── routes/
+│   │   │       ├── documents.py
+│   │   │       └── obligations.py
 │   │   ├── core/
 │   │   │   ├── config.py
-│   │   │   └── security.py
+│   │   │   └── dependencies.py
 │   │   ├── db/
 │   │   │   ├── database.py
 │   │   │   └── models/
 │   │   │       ├── document.py
-│   │   │       ├── obligation.py
-│   │   │       ├── task.py
-│   │   │       ├── user.py
-│   │   │       └── audit_log.py
+│   │   │       └── obligation.py
 │   │   ├── schemas/
+│   │   │   ├── ai.py
 │   │   │   ├── document.py
-│   │   │   ├── obligation.py
-│   │   │   ├── task.py
-│   │   │   └── user.py
+│   │   │   └── obligation.py
 │   │   ├── services/
-│   │   │   ├── document_service.py
-│   │   │   ├── obligation_service.py
-│   │   │   └── task_service.py
+│   │   │   └── ai_service.py
 │   │   └── main.py
 │   ├── tests/
 │   ├── requirements.txt
@@ -119,7 +110,7 @@ ReguLens/
 
 ## 6) How Components Communicate
 
-1. **Frontend → Backend API:** HTTP requests for documents, obligations, tasks, and user flows.
+1. **Frontend → Backend API:** HTTP requests for document uploads, analysis triggering, and fetching obligations.
 2. **Backend API → AI Processing:** backend service layer calls AI module interfaces (not route-level coupling).
 3. **Backend API ↔ PostgreSQL:** SQLAlchemy persistence for structured records.
 4. **AI Processing → Backend contracts:** extracted outputs conform to shared schemas before storage.
