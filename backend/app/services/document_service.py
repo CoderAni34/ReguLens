@@ -23,10 +23,14 @@ def create_document(
         version=version,
         processing_status=processing_status,
     )
-    db.add(db_document)
-    db.commit()
-    db.refresh(db_document)
-    return db_document
+    try:
+        db.add(db_document)
+        db.commit()
+        db.refresh(db_document)
+        return db_document
+    except Exception:
+        db.rollback()
+        raise
 
 
 def get_document_by_id(db: Session, document_id: int) -> Optional[Document]:
@@ -44,10 +48,14 @@ def update_processing_status(db: Session, document_id: int, status: str) -> Opti
     document = get_document_by_id(db, document_id)
     if not document:
         return None
-    document.processing_status = status
-    db.commit()
-    db.refresh(document)
-    return document
+    try:
+        document.processing_status = status
+        db.commit()
+        db.refresh(document)
+        return document
+    except Exception:
+        db.rollback()
+        raise
 
 
 def update_document_metadata(
@@ -63,19 +71,23 @@ def update_document_metadata(
     document = get_document_by_id(db, document_id)
     if not document:
         return None
-    if title is not None:
-        document.title = title
-    if document_type is not None:
-        document.document_type = document_type
-    if language is not None:
-        document.language = language
-    if version is not None:
-        document.version = version
-    if processing_status is not None:
-        document.processing_status = processing_status
-    db.commit()
-    db.refresh(document)
-    return document
+    try:
+        if title is not None:
+            document.title = title
+        if document_type is not None:
+            document.document_type = document_type
+        if language is not None:
+            document.language = language
+        if version is not None:
+            document.version = version
+        if processing_status is not None:
+            document.processing_status = processing_status
+        db.commit()
+        db.refresh(document)
+        return document
+    except Exception:
+        db.rollback()
+        raise
 
 
 def delete_document(db: Session, document_id: int) -> bool:
@@ -83,6 +95,11 @@ def delete_document(db: Session, document_id: int) -> bool:
     document = get_document_by_id(db, document_id)
     if not document:
         return False
-    db.delete(document)
-    db.commit()
-    return True
+    try:
+        db.delete(document)
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+

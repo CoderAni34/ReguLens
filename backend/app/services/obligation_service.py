@@ -18,14 +18,18 @@ def create_obligation(db: Session, obligation_data: ObligationCreate) -> Obligat
         confidence=obligation_data.confidence,
         status=obligation_data.status or "active",
     )
-    db.add(db_obligation)
-    db.commit()
-    db.refresh(db_obligation)
-    return db_obligation
+    try:
+        db.add(db_obligation)
+        db.commit()
+        db.refresh(db_obligation)
+        return db_obligation
+    except Exception:
+        db.rollback()
+        raise
 
 
 def create_obligations_bulk(db: Session, obligations_data: List[ObligationCreate]) -> List[Obligation]:
-    """Bulk create and persist multiple obligations in the database."""
+    """Bulk create and persist multiple obligations in the database atomically."""
     db_obligations = [
         Obligation(
             document_id=data.document_id,
@@ -41,8 +45,12 @@ def create_obligations_bulk(db: Session, obligations_data: List[ObligationCreate
         )
         for data in obligations_data
     ]
-    db.add_all(db_obligations)
-    db.commit()
+    try:
+        db.add_all(db_obligations)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     for obs in db_obligations:
         db.refresh(obs)
     return db_obligations
@@ -61,3 +69,4 @@ def get_obligations(db: Session, skip: int = 0, limit: int = 100) -> List[Obliga
 def get_obligations_by_document_id(db: Session, document_id: int) -> List[Obligation]:
     """Retrieve all obligations associated with a specific document ID."""
     return db.query(Obligation).filter(Obligation.document_id == document_id).all()
+

@@ -1,5 +1,5 @@
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
@@ -11,8 +11,13 @@ router = APIRouter()
 
 @router.get("", response_model=List[ObligationResponse])
 @router.get("/", response_model=List[ObligationResponse], include_in_schema=False)
-def list_obligations(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_obligations(
+    skip: int = Query(0, ge=0, description="Number of items to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum items to return"),
+    db: Session = Depends(get_db),
+):
     return obligation_service.get_obligations(db=db, skip=skip, limit=limit)
+
 
 
 @router.get("/{obligation_id}", response_model=ObligationResponse)

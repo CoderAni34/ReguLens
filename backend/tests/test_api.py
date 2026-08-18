@@ -313,3 +313,80 @@ def test_obligation_schema_validation():
             confidence=-0.1,
         )
 
+
+def test_pagination_validation_invalid_skip(client):
+    response = client.get("/documents?skip=-1")
+    assert response.status_code == 422
+
+    response_obs = client.get("/obligations?skip=-5")
+    assert response_obs.status_code == 422
+
+
+def test_pagination_validation_invalid_limit(client):
+    response = client.get("/documents?limit=0")
+    assert response.status_code == 422
+
+    response_large = client.get("/documents?limit=9999")
+    assert response_large.status_code == 422
+
+    response_obs = client.get("/obligations?limit=0")
+    assert response_obs.status_code == 422
+
+
+def test_analyze_document_ai_failure(client, monkeypatch):
+    doc_id = upload_test_pdf(client, filename="failure_test.pdf")
+
+    async def mock_failing_ai(doc_id):
+        raise RuntimeError("Simulated AI extraction failure")
+
+    monkeypatch.setattr("app.services.ai_service.analyze_document", mock_failing_ai)
+
+    response = client.post(f"/documents/{doc_id}/analyze")
+    assert response.status_code == 500
+    assert "AI analysis failed" in response.json()["detail"]
+
+    # Verify document status transitioned to failed
+    doc_resp = client.get(f"/documents/{doc_id}")
+    assert doc_resp.status_code == 200
+    assert doc_resp.json()["processing_status"] == "failed"
+
+
+def test_analyze_document_invalid_ai_response(client, monkeypatch):
+    doc_id = upload_test_pdf(client, filename="invalid_ai_test.pdf")
+
+    async def mock_invalid_ai(doc_id):
+        raise ValidationError.from_exception_data(
+            "AIResponse",
+            [{"type": "greater_than_equal", "loc": ("obligations", 0, "confidence"), "input": 1.5, "ctx": {"ge": 0}}],
+        )
+
+    monkeypatch.setattr("app.services.ai_service.analyze_document", mock_invalid_ai)
+
+    response = client.post(f"/documents/{doc_id}/analyze")
+    assert response.status_code == 500
+    assert "AI analysis failed" in response.json()["detail"]
+
+    # Verify document status transitioned to failed and no obligations were persisted
+    doc_resp = client.get(f"/documents/{doc_id}")
+    assert doc_resp.status_code == 200
+    assert doc_resp.json()["processing_status"] == "failed"
+
+    obs_resp = client.get(f"/obligations/document/{doc_id}")
+    assert obs_resp.status_code == 200
+    assert obs_resp.json() == []
+
+
+def test_upload_file_cleanup_on_db_error(client, monkeypatch):
+    file_content = b"%PDF-1.4 sample content"
+    files = {"file": ("orphan_test.pdf", io.BytesIO(file_content), "application/pdf")}
+
+    def mock_failing_create_document(*args, **kwargs):
+        raise RuntimeError("Simulated DB Insert Failure")
+
+    monkeypatch.setattr("app.services.document_service.create_document", mock_failing_create_document)
+
+    response = client.post("/documents/upload", files=files)
+    assert response.status_code == 500
+    assert "Failed to create document record" in response.json()["detail"]
+
+

@@ -1,7 +1,7 @@
 import os
 import shutil
 from typing import List
-from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, status, Query
 from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db
@@ -14,7 +14,6 @@ router = APIRouter()
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
 
 
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
@@ -36,21 +35,37 @@ def upload_document(file: UploadFile = File(...), db: Session = Depends(get_db))
             detail=f"Failed to save file: {str(e)}",
         )
 
-    db_document = document_service.create_document(
-        db=db,
-        filename=file.filename,
-        file_path=file_path,
-        title=file.filename,
-        processing_status="uploaded",
-    )
+    try:
+        db_document = document_service.create_document(
+            db=db,
+            filename=file.filename,
+            file_path=file_path,
+            title=file.filename,
+            processing_status="uploaded",
+        )
+    except Exception as e:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create document record: {str(e)}",
+        )
 
     return db_document
 
 
 @router.get("", response_model=List[DocumentResponse])
 @router.get("/", response_model=List[DocumentResponse], include_in_schema=False)
-def list_documents(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
+def list_documents(
+    skip: int = Query(0, ge=0, description="Number of items to skip"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum items to return"),
+    db: Session = Depends(get_db),
+):
     return document_service.get_documents(db=db, skip=skip, limit=limit)
+
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
