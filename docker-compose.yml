@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16
+    container_name: regulens-db
+    environment:
+      POSTGRES_DB: regulens
+      POSTGRES_USER: regulens
+      POSTGRES_PASSWORD: regulens
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  backend:
+    image: python:3.12-slim
+    container_name: regulens-backend
+    working_dir: /app
+    command: bash -lc "pip install -r requirements.txt && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    volumes:
+      - ./backend:/app
+    env_file:
+      - .env.example
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  frontend:
+    image: node:20-alpine
+    container_name: regulens-frontend
+    working_dir: /app
+    command: sh -lc "npm install && npm run dev -- --host 0.0.0.0 --port 5173"
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+  ai:
+    image: python:3.12-slim
+    container_name: regulens-ai
+    working_dir: /app
+    command: bash -lc "python -m http.server 8100"
+    volumes:
+      - ./ai:/app
+    ports:
+      - "8100:8100"
+
+volumes:
+  postgres_data:

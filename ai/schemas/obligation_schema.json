@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Obligation",
+  "type": "object",
+  "description": "Placeholder schema for extracted compliance obligations.",
+  "properties": {
+    "id": { "type": "string" },
+    "text": { "type": "string" },
+    "source_reference": { "type": "string" },
+    "deadline": { "type": ["string", "null"] },
+    "responsible_unit": { "type": ["string", "null"] }
+  },
+  "required": ["id", "text", "source_reference"]
+}
