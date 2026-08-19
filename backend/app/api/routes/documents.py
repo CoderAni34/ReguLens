@@ -63,9 +63,9 @@ async def analyze_document_endpoint(document_id: int, db: Session = Depends(get_
     document.processing_status = "processing"
     db.commit()
 
-    # Call the mock AI service
+    # Call the AI service
     try:
-        ai_response = await analyze_document(document_id)
+        ai_response = await analyze_document(document_id, file_path=document.file_path)
     except Exception as e:
         document.processing_status = "failed"
         db.commit()
