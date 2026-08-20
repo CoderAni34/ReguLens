@@ -5,8 +5,9 @@ class Settings(BaseSettings):
     app_name: str = "ReguLens"
     environment: str = "development"
     database_url: str = "postgresql+psycopg2://db:5432/regulens"
+    gemini_api_key: str | None = None
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 settings = Settings()

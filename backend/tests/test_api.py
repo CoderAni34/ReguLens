@@ -1,10 +1,20 @@
 import io
 import pytest
 from pydantic import ValidationError
-
 from app.schemas.obligation import ObligationCreate
 from app.services import document_service, obligation_service
+from unittest.mock import patch
+import pymupdf
+from app.schemas.ai import AIResponse, AIDocumentInfo, AIObligation
 
+def create_mock_pdf_bytes() -> bytes:
+    """Generate minimal valid PDF bytes for test ingestion."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    page.insert_text((50, 50), "University Grants Commission Guidelines 2026.\nAll Higher Educational Institutions must submit an Annual Compliance Report by end of Q1.\nInstitutions shall conduct a bi-annual audit of student data privacy practices.")
+    pdf_bytes = doc.tobytes()
+    doc.close()
+    return pdf_bytes
 
 def test_health_check(client):
     response = client.get("/health")
@@ -19,7 +29,6 @@ def test_upload_invalid_file(client):
     assert response.status_code == 400
     assert "Only PDF files" in response.json()["detail"]
 
-
 def test_upload_invalid_extension_txt(client):
     file_content = b"sample text content"
     files = {"file": ("report.txt", io.BytesIO(file_content), "text/plain")}
@@ -27,16 +36,15 @@ def test_upload_invalid_extension_txt(client):
     assert response.status_code == 400
     assert "Only PDF files" in response.json()["detail"]
 
-
 def upload_test_pdf(client, filename="test_doc.pdf"):
-    file_content = b"%PDF-1.4 mock pdf content"
+    file_content = create_mock_pdf_bytes()
     files = {"file": (filename, io.BytesIO(file_content), "application/pdf")}
     response = client.post("/documents/upload", files=files)
     return response.json()["id"]
 
 
 def test_upload_valid_pdf(client):
-    file_content = b"%PDF-1.4 mock pdf content"
+    file_content = create_mock_pdf_bytes()
     files = {"file": ("test_doc.pdf", io.BytesIO(file_content), "application/pdf")}
     response = client.post("/documents/upload", files=files)
     assert response.status_code == 201
@@ -54,7 +62,7 @@ def test_get_documents_empty(client):
 
 def test_get_documents(client):
     doc_id = upload_test_pdf(client)
-
+    
     response = client.get("/documents/")
     assert response.status_code == 200
     data = response.json()
@@ -69,7 +77,7 @@ def test_get_documents(client):
 
 def test_get_document(client):
     doc_id = upload_test_pdf(client)
-
+    
     response = client.get(f"/documents/{doc_id}")
     assert response.status_code == 200
     data = response.json()
@@ -85,43 +93,87 @@ def test_get_document_not_found(client):
 
 def test_analyze_document(client):
     doc_id = upload_test_pdf(client)
+    mock_ai_data = AIResponse(
+        document=AIDocumentInfo(
+            title="Sample Mock Regulation Act 2026",
+            document_type="regulation",
+            language="en",
+            version="1.0"
+        ),
+        obligations=[
+            AIObligation(
+                title="Annual Compliance Report",
+                description="All educational institutions must submit an annual compliance report by end of Q1.",
+                responsible_unit="Compliance Department",
+                deadline="2026-03-31",
+                evidence_required="Signed audit report",
+                penalty="Warning",
+                category="Compliance",
+                priority="High",
+                source_text="Section 4(a): All educational institutions must submit an annual compliance report by end of Q1.",
+                source_page=12,
+                confidence=0.95
+            ),
+            AIObligation(
+                title="Data Privacy Audit",
+                description="Conduct a bi-annual audit of student data privacy practices.",
+                responsible_unit="IT Security",
+                deadline=None,
+                evidence_required="Audit logs and certification",
+                penalty=None,
+                category="Security",
+                priority="Medium",
+                source_text="Section 9: Institutions shall conduct a bi-annual audit of student data privacy practices.",
+                source_page=24,
+                confidence=0.88
+            )
+        ]
+    )
 
-    response = client.post(f"/documents/{doc_id}/analyze")
-    assert response.status_code == 200
-    data = response.json()
+    with patch("app.services.ai_service.analyze_document", return_value=mock_ai_data):
+        response = client.post(f"/documents/{doc_id}/analyze")
+        assert response.status_code == 200
+        data = response.json()
 
-    # Check document updates
-    doc_data = data["document"]
-    assert doc_data["processing_status"] == "completed"
-    assert doc_data["title"] == "Sample Mock Regulation Act 2026"
-    assert doc_data["document_type"] == "regulation"
-    assert doc_data["language"] == "en"
-    assert doc_data["version"] == "1.0"
+        # Check document updates
+        doc_data = data["document"]
+        assert doc_data["processing_status"] == "completed"
+        assert doc_data["title"] == "Sample Mock Regulation Act 2026"
+        assert doc_data["document_type"] == "regulation"
+        assert doc_data["language"] == "en"
+        assert doc_data["version"] == "1.0"
 
-    # Check obligations created
-    obs_data = data["obligations"]
-    assert len(obs_data) == 2
-    assert obs_data[0]["title"] == "Annual Compliance Report"
-    assert obs_data[0]["document_id"] == doc_id
-    assert obs_data[0]["responsible_unit"] == "Compliance Department"
-    assert obs_data[0]["deadline"] == "2026-03-31"
-    assert obs_data[0]["evidence_required"] == "Signed audit report"
-    assert obs_data[0]["source_text"].startswith("Section 4(a):")
-    assert obs_data[0]["source_page"] == 12
-    assert obs_data[0]["confidence"] == 0.95
-    assert obs_data[0]["status"] == "active"
+        # Check obligations created
+        obs_data = data["obligations"]
+        assert len(obs_data) == 2
+        assert obs_data[0]["title"] == "Annual Compliance Report"
+        assert obs_data[0]["document_id"] == doc_id
+        assert obs_data[0]["responsible_unit"] == "Compliance Department"
+        assert obs_data[0]["deadline"] == "2026-03-31"
+        assert obs_data[0]["evidence_required"] == "Signed audit report"
+        assert obs_data[0]["penalty"] == "Warning"
+        assert obs_data[0]["category"] == "Compliance"
+        assert obs_data[0]["priority"] == "High"
+        assert obs_data[0]["source_text"].startswith("Section 4(a):")
+        assert obs_data[0]["source_page"] == 12
+        assert obs_data[0]["confidence"] == 0.95
+        assert obs_data[0]["status"] == "active"
 
-    # Check second obligation with nullable fields
-    assert obs_data[1]["title"] == "Data Privacy Audit"
-    assert obs_data[1]["deadline"] is None
-    assert obs_data[1]["source_page"] == 24
-    assert obs_data[1]["confidence"] == 0.88
+        # Check second obligation with nullable fields
+        assert obs_data[1]["title"] == "Data Privacy Audit"
+        assert obs_data[1]["deadline"] is None
+        assert obs_data[1]["penalty"] is None
+        assert obs_data[1]["category"] == "Security"
+        assert obs_data[1]["priority"] == "Medium"
+        assert obs_data[1]["source_page"] == 24
+        assert obs_data[1]["confidence"] == 0.88
 
-    # Verify obligations can be fetched by document
-    response_obs = client.get(f"/obligations/document/{doc_id}")
-    assert response_obs.status_code == 200
-    fetched_obs = response_obs.json()
-    assert len(fetched_obs) == 2
+        # Verify obligations can be fetched
+        response_obs = client.get(f"/obligations/document/{doc_id}")
+        assert response_obs.status_code == 200
+        fetched_obs = response_obs.json()
+        assert len(fetched_obs) == 2
+        assert fetched_obs[0]["category"] == "Compliance"
 
 
 def test_analyze_not_found(client):
@@ -132,7 +184,15 @@ def test_analyze_not_found(client):
 
 def test_get_obligations_list(client):
     doc_id = upload_test_pdf(client)
-    client.post(f"/documents/{doc_id}/analyze")
+    mock_ai_data = AIResponse(
+        document=AIDocumentInfo(title="Test", document_type="type", language="en", version="1.0"),
+        obligations=[
+            AIObligation(title="Obs 1", description="D", source_text="S", confidence=0.9, penalty=None, category=None, priority=None),
+            AIObligation(title="Obs 2", description="D", source_text="S", confidence=0.9, penalty=None, category=None, priority=None)
+        ]
+    )
+    with patch("app.services.ai_service.analyze_document", return_value=mock_ai_data):
+        client.post(f"/documents/{doc_id}/analyze")
 
     response = client.get("/obligations")
     assert response.status_code == 200
@@ -147,7 +207,14 @@ def test_get_obligations_list(client):
 
 def test_get_obligation_by_id(client):
     doc_id = upload_test_pdf(client)
-    analyze_resp = client.post(f"/documents/{doc_id}/analyze")
+    mock_ai_data = AIResponse(
+        document=AIDocumentInfo(title="Test", document_type="type", language="en", version="1.0"),
+        obligations=[
+            AIObligation(title="Annual Compliance Report", description="D", source_text="Exact text here", confidence=0.95, penalty=None, category=None, priority=None)
+        ]
+    )
+    with patch("app.services.ai_service.analyze_document", return_value=mock_ai_data):
+        analyze_resp = client.post(f"/documents/{doc_id}/analyze")
     obs_id = analyze_resp.json()["obligations"][0]["id"]
 
     response = client.get(f"/obligations/{obs_id}")

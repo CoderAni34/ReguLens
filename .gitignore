@@ -23,6 +23,9 @@ htmlcov/
 # Environment / Secrets
 # =========================
 .env
+*.env
+*.db
+*.sqlite3
 .env.local
 .env.*.local
 

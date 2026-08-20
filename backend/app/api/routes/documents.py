@@ -92,7 +92,8 @@ async def analyze_document_endpoint(document_id: int, db: Session = Depends(get_
 
     # Call AI extraction service
     try:
-        ai_response = await ai_service.analyze_document(document_id)
+        # Use the real Gemini AI service which takes file_path
+        ai_response = await ai_service.analyze_document(document_id, file_path=document.file_path)
     except Exception as e:
         document_service.update_processing_status(db=db, document_id=document_id, status="failed")
         raise HTTPException(
@@ -111,7 +112,7 @@ async def analyze_document_endpoint(document_id: int, db: Session = Depends(get_
         processing_status="completed",
     )
 
-    # Save extracted obligations
+    # Save extracted obligations using the new service layer
     obligations_to_create = [
         ObligationCreate(
             document_id=document.id,
@@ -120,6 +121,9 @@ async def analyze_document_endpoint(document_id: int, db: Session = Depends(get_
             responsible_unit=obs.responsible_unit,
             deadline=obs.deadline,
             evidence_required=obs.evidence_required,
+            penalty=obs.penalty,
+            category=obs.category,
+            priority=obs.priority,
             source_text=obs.source_text,
             source_page=obs.source_page,
             confidence=obs.confidence,

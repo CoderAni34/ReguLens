@@ -8,6 +8,9 @@ class ObligationBase(BaseModel):
     responsible_unit: Optional[str] = None
     deadline: Optional[str] = None
     evidence_required: Optional[str] = None
+    penalty: Optional[str] = None
+    category: Optional[str] = None
+    priority: Optional[str] = None
     source_text: str
     source_page: Optional[int] = None
     confidence: float = Field(..., ge=0.0, le=1.0)
