@@ -74,6 +74,9 @@ def test_analyze_document(client):
                 responsible_unit="Compliance Department",
                 deadline="2026-03-31",
                 evidence_required="Signed audit report",
+                penalty="Warning",
+                category="Compliance",
+                priority="High",
                 source_text="Section 4(a): All educational institutions must submit an annual compliance report by end of Q1.",
                 source_page=12,
                 confidence=0.95
@@ -84,6 +87,9 @@ def test_analyze_document(client):
                 responsible_unit="IT Security",
                 deadline=None,
                 evidence_required="Audit logs and certification",
+                penalty=None,
+                category="Security",
+                priority="Medium",
                 source_text="Section 9: Institutions shall conduct a bi-annual audit of student data privacy practices.",
                 source_page=24,
                 confidence=0.88
@@ -106,12 +112,20 @@ def test_analyze_document(client):
         assert len(obs_data) == 2
         assert obs_data[0]["title"] == "Annual Compliance Report"
         assert obs_data[0]["document_id"] == doc_id
+        assert obs_data[0]["penalty"] == "Warning"
+        assert obs_data[0]["category"] == "Compliance"
+        assert obs_data[0]["priority"] == "High"
+
+        assert obs_data[1]["penalty"] is None
+        assert obs_data[1]["category"] == "Security"
+        assert obs_data[1]["priority"] == "Medium"
 
         # Verify obligations can be fetched
         response_obs = client.get(f"/obligations/document/{doc_id}")
         assert response_obs.status_code == 200
         fetched_obs = response_obs.json()
         assert len(fetched_obs) == 2
+        assert fetched_obs[0]["category"] == "Compliance"
 
 def test_analyze_not_found(client):
     response = client.post("/documents/999/analyze")
