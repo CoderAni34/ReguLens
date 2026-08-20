@@ -1,6 +1,9 @@
-from pydantic import BaseModel, ConfigDict
-from typing import Optional
 from datetime import datetime
+from typing import Optional, List
+from pydantic import BaseModel, ConfigDict
+
+from app.schemas.obligation import ObligationResponse
+
 
 class DocumentBase(BaseModel):
     title: Optional[str] = None
@@ -8,8 +11,12 @@ class DocumentBase(BaseModel):
     language: Optional[str] = None
     version: Optional[str] = None
 
+
 class DocumentCreate(DocumentBase):
-    pass
+    filename: str
+    file_path: str
+    processing_status: Optional[str] = "uploaded"
+
 
 class DocumentResponse(DocumentBase):
     id: int
@@ -19,3 +26,9 @@ class DocumentResponse(DocumentBase):
     processing_status: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class DocumentAnalysisResponse(BaseModel):
+    document: DocumentResponse
+    obligations: List[ObligationResponse]
+

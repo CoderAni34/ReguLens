@@ -15,7 +15,8 @@ class Document(Base):
     document_type = Column(String, nullable=True)
     language = Column(String, nullable=True)
     version = Column(String, nullable=True)
-    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    processing_status = Column(String, default="uploaded")
+    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    processing_status = Column(String, default="uploaded", nullable=False)
 
     obligations = relationship("Obligation", back_populates="document", cascade="all, delete-orphan")
+

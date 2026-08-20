@@ -1,5 +1,6 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional
+
 
 class ObligationBase(BaseModel):
     title: str
@@ -9,10 +10,13 @@ class ObligationBase(BaseModel):
     evidence_required: Optional[str] = None
     source_text: str
     source_page: Optional[int] = None
-    confidence: float
+    confidence: float = Field(..., ge=0.0, le=1.0)
+
 
 class ObligationCreate(ObligationBase):
     document_id: int
+    status: Optional[str] = "active"
+
 
 class ObligationResponse(ObligationBase):
     id: int
@@ -20,3 +24,4 @@ class ObligationResponse(ObligationBase):
     status: str
 
     model_config = ConfigDict(from_attributes=True)
+
