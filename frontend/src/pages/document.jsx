@@ -1,93 +1,134 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { getDocuments, deleteDocument } from "../services/api";
 
-function Documents() {
+function Documents({ setActivePage, onSelectDocument, setPendingFile }) {
   const [selectedType, setSelectedType] = useState("All");
   const [selectedDocument, setSelectedDocument] = useState(null);
-  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [documents, setDocuments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
 
-  const documents = [
-    {
-      id: "DOC-001",
-      title: "Annual Compliance Policy",
-      description:
-        "Primary compliance policy outlining organizational requirements and responsibilities.",
-      type: "Policy",
-      uploadedOn: "20 Jan 2027",
-      status: "Active",
-      owner: "Compliance Team",
-    },
-    {
-      id: "DOC-002",
-      title: "Data Protection Guidelines",
-      description:
-        "Guidelines for handling, storing, and protecting sensitive information.",
-      type: "Guideline",
-      uploadedOn: "18 Jan 2027",
-      status: "Active",
-      owner: "Legal Team",
-    },
-    {
-      id: "DOC-003",
-      title: "Annual Audit Report",
-      description:
-        "Detailed report containing findings from the annual compliance audit.",
-      type: "Report",
-      uploadedOn: "15 Jan 2027",
-      status: "Review",
-      owner: "Internal Audit",
-    },
-    {
-      id: "DOC-004",
-      title: "Risk Assessment Framework",
-      description:
-        "Framework used to identify and evaluate organizational compliance risks.",
-      type: "Framework",
-      uploadedOn: "12 Jan 2027",
-      status: "Active",
-      owner: "Risk Team",
-    },
-  ];
+  const fetchDocs = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await getDocuments();
+      setDocuments(data || []);
+    } catch (err) {
+      console.error("Failed to load documents:", err);
+      setError(err.message || "Failed to load documents from server.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const filteredDocuments =
-    selectedType === "All"
-      ? documents
-      : documents.filter(
-          (document) => document.type === selectedType
-        );
+  useEffect(() => {
+    fetchDocs();
+  }, []);
 
-  const activeCount = documents.filter(
-    (document) => document.status === "Active"
-  ).length;
+  const formatUploadDate = (dateStr) => {
+    if (!dateStr) return "Recently";
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString("en-GB", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    } catch {
+      return dateStr;
+    }
+  };
 
-  const reviewCount = documents.filter(
-    (document) => document.status === "Review"
-  ).length;
+  const filteredDocuments = useMemo(() => {
+    if (selectedType === "All") {
+      return documents;
+    }
+    return documents.filter((doc) => {
+      const type = (doc.document_type || "Regulation").toLowerCase();
+      return type.includes(selectedType.toLowerCase());
+    });
+  }, [documents, selectedType]);
+
+  const completedCount = useMemo(
+    () => documents.filter((d) => (d.processing_status || "").toLowerCase() === "completed").length,
+    [documents]
+  );
+
+  const processingCount = useMemo(
+    () => documents.filter((d) => (d.processing_status || "").toLowerCase() === "processing" || (d.processing_status || "").toLowerCase() === "uploaded").length,
+    [documents]
+  );
+
+  const latestUploadDate = useMemo(() => {
+    if (documents.length === 0) return "--";
+    return formatUploadDate(documents[0].uploaded_at);
+  }, [documents]);
+
+  const handleDelete = async (docId, e) => {
+    e.stopPropagation();
+    if (!window.confirm("Are you sure you want to delete this document and all its extracted obligations?")) {
+      return;
+    }
+    try {
+      await deleteDocument(docId);
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
+      if (selectedDocument && selectedDocument.id === docId) {
+        setSelectedDocument(null);
+      }
+    } catch (err) {
+      alert(`Failed to delete document: ${err.message}`);
+    }
+  };
 
   return (
     <main className="documents-page">
       {/* HEADER */}
       <div className="documents-header">
         <div className="documents-header-content">
-          <span className="page-badge">
-            ▣ DOCUMENT MANAGEMENT
-          </span>
-
+          <span className="page-badge">▣ DOCUMENT MANAGEMENT</span>
           <h1>Documents</h1>
-
           <p>
-            Manage and organize compliance documents, policies, and reports.
+            Manage and organize compliance documents, circulars, and regulatory policies.
           </p>
         </div>
 
         <button
           className="primary-btn"
-          onClick={() => setShowUploadModal(true)}
+          onClick={() => setActivePage && setActivePage("Upload")}
         >
-          + Upload
-          <br />
-          Document
+          + Upload Document
         </button>
       </div>
+
+      {error && (
+        <div style={{
+          backgroundColor: "rgba(239, 68, 68, 0.12)",
+          border: "1px solid rgba(239, 68, 68, 0.3)",
+          color: "#f87171",
+          padding: "14px 18px",
+          borderRadius: "8px",
+          marginBottom: "20px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        }}>
+          <span>⚠️ {error}</span>
+          <button
+            onClick={fetchDocs}
+            style={{
+              background: "rgba(239, 68, 68, 0.2)",
+              border: "1px solid rgba(239, 68, 68, 0.4)",
+              color: "#fff",
+              padding: "4px 10px",
+              borderRadius: "4px",
+              cursor: "pointer",
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* STATISTICS */}
       <div className="documents-stats">
@@ -97,24 +138,18 @@ function Documents() {
         </div>
 
         <div className="documents-stat-card">
-          <span>Active</span>
-          <strong className="success-text">
-            {activeCount}
-          </strong>
+          <span>Analyzed & Completed</span>
+          <strong className="success-text">{completedCount}</strong>
         </div>
 
         <div className="documents-stat-card">
-          <span>Needs Review</span>
-          <strong className="warning-text">
-            {reviewCount}
-          </strong>
+          <span>In Ingestion / Processing</span>
+          <strong className="warning-text">{processingCount}</strong>
         </div>
 
         <div className="documents-stat-card">
           <span>Latest Upload</span>
-          <strong className="info-text latest-date">
-            20 Jan
-          </strong>
+          <strong className="info-text latest-date">{latestUploadDate}</strong>
         </div>
       </div>
 
@@ -127,20 +162,10 @@ function Documents() {
           </div>
 
           <div className="filter-buttons">
-            {[
-              "All",
-              "Policy",
-              "Guideline",
-              "Report",
-              "Framework",
-            ].map((type) => (
+            {["All", "Regulation", "Circular", "Policy", "Guideline"].map((type) => (
               <button
                 key={type}
-                className={
-                  selectedType === type
-                    ? "filter-btn active"
-                    : "filter-btn"
-                }
+                className={selectedType === type ? "filter-btn active" : "filter-btn"}
                 onClick={() => setSelectedType(type)}
               >
                 {type}
@@ -151,101 +176,136 @@ function Documents() {
 
         <div className="documents-divider" />
 
+        {loading && (
+          <div style={{ padding: "40px 20px", textAlign: "center", color: "#94a3b8" }}>
+            <div style={{ fontSize: "24px", marginBottom: "8px" }}>⏳</div>
+            <p>Loading documents from database...</p>
+          </div>
+        )}
+
+        {!loading && filteredDocuments.length === 0 && (
+          <div style={{
+            padding: "50px 20px",
+            textAlign: "center",
+            background: "rgba(255, 255, 255, 0.02)",
+            borderRadius: "12px",
+            border: "1px dashed rgba(255, 255, 255, 0.1)",
+            margin: "20px 0",
+          }}>
+            <div style={{ fontSize: "36px", marginBottom: "12px" }}>📂</div>
+            <h3 style={{ fontSize: "18px", color: "#f8fafc", marginBottom: "8px" }}>
+              No documents in your library yet.
+            </h3>
+            <p style={{ color: "#94a3b8", fontSize: "14px", maxWidth: "450px", margin: "0 auto 20px" }}>
+              Upload your first regulatory document or circular to begin automated AI compliance analysis.
+            </p>
+            {setActivePage && (
+              <button
+                className="primary-btn"
+                onClick={() => setActivePage("Upload")}
+                style={{ padding: "10px 24px" }}
+              >
+                + Upload Document
+              </button>
+            )}
+          </div>
+        )}
+
         {/* DOCUMENT LIST */}
-        <div className="documents-list">
-          {filteredDocuments.map((document) => (
-            <div
-              className="document-card"
-              key={document.id}
-              onClick={() => setSelectedDocument(document)}
-            >
-              <div className="document-main">
-                <span className="document-id">
-                  {document.id}
-                </span>
+        {!loading && filteredDocuments.length > 0 && (
+          <div className="documents-list">
+            {filteredDocuments.map((document) => {
+              const status = document.processing_status || "uploaded";
+              return (
+                <div
+                  className="document-card"
+                  key={document.id}
+                  onClick={() => setSelectedDocument(document)}
+                >
+                  <div className="document-main">
+                    <span className="document-id">DOC-{String(document.id).padStart(3, "0")}</span>
+                    <h3>{document.title || document.filename}</h3>
+                    <p style={{ wordBreak: "break-all" }}>{document.filename}</p>
+                  </div>
 
-                <h3>{document.title}</h3>
+                  <div className="document-info">
+                    <div className="info-item">
+                      <span>TYPE</span>
+                      <strong>{document.document_type || "Regulation"}</strong>
+                    </div>
 
-                <p>{document.description}</p>
-              </div>
+                    <div className="info-item">
+                      <span>UPLOADED</span>
+                      <strong>{formatUploadDate(document.uploaded_at)}</strong>
+                    </div>
 
-              <div className="document-info">
-                <div className="info-item">
-                  <span>TYPE</span>
-                  <strong>{document.type}</strong>
+                    <div className="info-item">
+                      <span>STATUS</span>
+                      <strong className={`document-status ${status.toLowerCase()}`}>
+                        {status}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <span className="arrow">→</span>
                 </div>
-
-                <div className="info-item">
-                  <span>UPLOADED</span>
-                  <strong>{document.uploadedOn}</strong>
-                </div>
-
-                <div className="info-item">
-                  <span>STATUS</span>
-                  <strong
-                    className={`document-status ${document.status.toLowerCase()}`}
-                  >
-                    {document.status}
-                  </strong>
-                </div>
-              </div>
-
-              <span className="arrow">→</span>
-            </div>
-          ))}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* DOCUMENT DETAILS MODAL */}
       {selectedDocument && (
-        <div
-          className="modal-overlay"
-          onClick={() => setSelectedDocument(null)}
-        >
-          <div
-            className="obligation-modal document-modal"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="close-modal"
-              onClick={() => setSelectedDocument(null)}
-            >
+        <div className="modal-overlay" onClick={() => setSelectedDocument(null)}>
+          <div className="obligation-modal document-modal" onClick={(e) => e.stopPropagation()}>
+            <button className="close-modal" onClick={() => setSelectedDocument(null)}>
               ×
             </button>
 
             <span className="document-id">
-              {selectedDocument.id}
+              DOC-{String(selectedDocument.id).padStart(3, "0")}
             </span>
 
-            <h2>{selectedDocument.title}</h2>
+            <h2>{selectedDocument.title || selectedDocument.filename}</h2>
 
             <p className="modal-description">
-              {selectedDocument.description}
+              Uploaded file: <code>{selectedDocument.filename}</code>
             </p>
 
             <div className="modal-grid">
               <div>
                 <span>Document Type</span>
-                <strong>{selectedDocument.type}</strong>
+                <strong>{selectedDocument.document_type || "Regulatory Circular"}</strong>
               </div>
 
               <div>
-                <span>Status</span>
-                <strong>{selectedDocument.status}</strong>
+                <span>Processing Status</span>
+                <strong className={`status ${(selectedDocument.processing_status || "uploaded").toLowerCase()}`}>
+                  {selectedDocument.processing_status || "uploaded"}
+                </strong>
               </div>
 
               <div>
                 <span>Uploaded On</span>
-                <strong>{selectedDocument.uploadedOn}</strong>
+                <strong>{formatUploadDate(selectedDocument.uploaded_at)}</strong>
               </div>
 
               <div>
-                <span>Owner</span>
-                <strong>{selectedDocument.owner}</strong>
+                <span>Language</span>
+                <strong>{selectedDocument.language || "English (en)"}</strong>
               </div>
             </div>
 
-            <div className="modal-actions">
+            <div className="modal-actions" style={{ marginTop: "24px" }}>
+              <button
+                className="secondary-btn"
+                style={{ color: "#f87171", borderColor: "rgba(239, 68, 68, 0.3)" }}
+                onClick={(e) => handleDelete(selectedDocument.id, e)}
+              >
+                Delete Document
+              </button>
+
               <button
                 className="secondary-btn"
                 onClick={() => setSelectedDocument(null)}
@@ -253,102 +313,19 @@ function Documents() {
                 Close
               </button>
 
-              <button className="primary-btn small-btn">
-                View Document
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* UPLOAD DOCUMENT MODAL */}
-      {showUploadModal && (
-        <div
-          className="modal-overlay"
-          onClick={() => setShowUploadModal(false)}
-        >
-          <div
-            className="obligation-modal upload-document-modal"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              className="close-modal"
-              onClick={() => setShowUploadModal(false)}
-            >
-              ×
-            </button>
-
-            <span className="page-badge">
-              UPLOAD DOCUMENT
-            </span>
-
-            <h2>Upload Document</h2>
-
-            <p className="modal-description">
-              Add a new document to your compliance library.
-            </p>
-
-            <div className="add-form">
-              <div className="form-group">
-                <label>Document Title</label>
-
-                <input
-                  type="text"
-                  placeholder="Enter document title"
-                />
-              </div>
-
-              <div className="form-row">
-                <div className="form-group">
-                  <label>Document Type</label>
-
-                  <select defaultValue="Policy">
-                    <option>Policy</option>
-                    <option>Guideline</option>
-                    <option>Report</option>
-                    <option>Framework</option>
-                  </select>
-                </div>
-
-                <div className="form-group">
-                  <label>Owner</label>
-
-                  <input
-                    type="text"
-                    placeholder="Enter document owner"
-                  />
-                </div>
-              </div>
-
-              <div className="form-group">
-                <label>Description</label>
-
-                <textarea
-                  rows="4"
-                  placeholder="Describe the document"
-                />
-              </div>
-
-              <div className="form-group">
-                <label>Select File</label>
-
-                <input type="file" />
-              </div>
-            </div>
-
-            <div className="modal-actions">
-              <button
-                className="secondary-btn"
-                onClick={() => setShowUploadModal(false)}
-              >
-                Cancel
-              </button>
-
               <button
                 className="primary-btn small-btn"
-                onClick={() => setShowUploadModal(false)}
+                onClick={() => {
+                  const doc = selectedDocument;
+                  setSelectedDocument(null);
+                  if (onSelectDocument) {
+                    onSelectDocument(doc);
+                  } else if (setActivePage) {
+                    setActivePage("Obligations");
+                  }
+                }}
               >
-                Upload Document
+                View Extracted Obligations →
               </button>
             </div>
           </div>

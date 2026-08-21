@@ -1,52 +1,128 @@
 import React, { useRef, useState } from "react";
 
-function Upload({ setActivePage }) {
+function Upload({ setActivePage, setPendingFile }) {
   const fileInputRef = useRef(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [language, setLanguage] = useState("Auto Detect");
   const [documentType, setDocumentType] = useState("Circular");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isDragging, setIsDragging] = useState(false);
+
+  const validateAndSetFile = (file) => {
+    setErrorMessage("");
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".pdf")) {
+      setErrorMessage("Only PDF files are supported by the regulatory intelligence engine.");
+      return;
+    }
+
+    if (file.size > 20 * 1024 * 1024) {
+      setErrorMessage("File size exceeds 20 MB limit.");
+      return;
+    }
+
+    setSelectedFile(file);
+  };
 
   const handleFileChange = (event) => {
     const file = event.target.files[0];
-
-    if (file) {
-      setSelectedFile(file);
-    }
+    validateAndSetFile(file);
   };
 
   const handleBrowseClick = () => {
-    fileInputRef.current.click();
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
   };
 
-const handleAnalyze = () => {
-  if (!selectedFile) {
-    alert("Please select a document first.");
-    return;
-  }
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
 
-  setActivePage("Processing");
-};
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      validateAndSetFile(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleAnalyze = () => {
+    if (!selectedFile) {
+      setErrorMessage("Please select a valid regulatory PDF document to begin extraction.");
+      return;
+    }
+
+    if (setPendingFile) {
+      setPendingFile(selectedFile);
+    }
+    setActivePage("Processing");
+  };
 
   return (
     <main className="upload-page">
       <div className="upload-header">
         <h1>Upload Regulatory Document</h1>
         <p>
-          Upload a document to extract obligations and compliance requirements.
+          Upload a compliance circular, regulation, or policy PDF to extract actionable obligations and compliance requirements.
         </p>
       </div>
 
+      {errorMessage && (
+        <div style={{
+          backgroundColor: "rgba(239, 68, 68, 0.15)",
+          border: "1px solid rgba(239, 68, 68, 0.4)",
+          color: "#f87171",
+          padding: "12px 16px",
+          borderRadius: "8px",
+          marginBottom: "20px",
+          fontSize: "14px",
+          display: "flex",
+          alignItems: "center",
+          gap: "8px",
+        }}>
+          <span>⚠️</span>
+          <span>{errorMessage}</span>
+        </div>
+      )}
+
       <div className="upload-layout">
         <section className="upload-panel">
-          <div className="drop-zone">
+          <div
+            className={`drop-zone ${isDragging ? "dragging" : ""}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            style={{
+              borderColor: isDragging ? "var(--primary-color, #6366f1)" : undefined,
+              background: isDragging ? "rgba(99, 102, 241, 0.05)" : undefined,
+            }}
+          >
             <div className="upload-icon">⇧</div>
 
             {selectedFile ? (
               <>
-                <h3>{selectedFile.name}</h3>
+                <h3 style={{ wordBreak: "break-word" }}>{selectedFile.name}</h3>
                 <p>
-                  {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                  {(selectedFile.size / 1024 / 1024).toFixed(2)} MB • Ready for ingestion
                 </p>
+                <button
+                  className="browse-btn"
+                  style={{ marginTop: "12px" }}
+                  onClick={handleBrowseClick}
+                >
+                  Choose Different File
+                </button>
               </>
             ) : (
               <>
@@ -54,6 +130,7 @@ const handleAnalyze = () => {
                 <p>or</p>
 
                 <button
+                  type="button"
                   className="browse-btn"
                   onClick={handleBrowseClick}
                 >
@@ -61,7 +138,7 @@ const handleAnalyze = () => {
                 </button>
 
                 <p className="file-support">
-                  Supports PDF, DOCX, TXT
+                  Supports Regulatory PDF Documents
                   <br />
                   Max file size: 20 MB
                 </p>
@@ -71,7 +148,7 @@ const handleAnalyze = () => {
             <input
               ref={fileInputRef}
               type="file"
-              accept=".pdf,.doc,.docx,.txt"
+              accept="application/pdf,.pdf"
               onChange={handleFileChange}
               hidden
             />
@@ -80,6 +157,11 @@ const handleAnalyze = () => {
           <button
             className="analyze-btn"
             onClick={handleAnalyze}
+            disabled={!selectedFile}
+            style={{
+              opacity: selectedFile ? 1 : 0.6,
+              cursor: selectedFile ? "pointer" : "not-allowed",
+            }}
           >
             Analyze Document
           </button>
@@ -118,23 +200,23 @@ const handleAnalyze = () => {
             <h3>Processing Options</h3>
 
             <label>
-              <input type="checkbox" defaultChecked />
+              <input type="checkbox" defaultChecked readOnly />
               Extract obligations
             </label>
 
             <label>
-              <input type="checkbox" defaultChecked />
+              <input type="checkbox" defaultChecked readOnly />
               Detect deadlines
             </label>
 
             <label>
-              <input type="checkbox" defaultChecked />
+              <input type="checkbox" defaultChecked readOnly />
               Detect evidence requirements
             </label>
 
             <label>
-              <input type="checkbox" defaultChecked />
-              Compare with previous versions
+              <input type="checkbox" defaultChecked readOnly />
+              Categorize & calculate priority
             </label>
           </div>
         </aside>

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 import Sidebar from "./components/Sidebar";
 import Dashboard from "./pages/dashboard";
@@ -14,6 +14,34 @@ import Settings from "./pages/Settings";
 
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
+  const [currentDocument, setCurrentDocumentState] = useState(() => {
+    try {
+      const saved = sessionStorage.getItem("regulens_current_document");
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
+  const [pendingFile, setPendingFile] = useState(null);
+
+  const setCurrentDocument = (doc) => {
+    setCurrentDocumentState(doc);
+    try {
+      if (doc) {
+        sessionStorage.setItem("regulens_current_document", JSON.stringify(doc));
+      } else {
+        sessionStorage.removeItem("regulens_current_document");
+      }
+    } catch (e) {
+      console.error("Failed to persist current document to sessionStorage", e);
+    }
+  };
+
+  // Helper to open obligations directly for a specific document
+  const handleViewDocumentObligations = (doc) => {
+    setCurrentDocument(doc);
+    setActivePage("Obligations");
+  };
 
   return (
     <div className="app">
@@ -25,23 +53,44 @@ function App() {
       <div className="main-area">
 
         {activePage === "Dashboard" && (
-          <Dashboard setActivePage={setActivePage} />
+          <Dashboard
+            setActivePage={setActivePage}
+            onSelectDocument={handleViewDocumentObligations}
+          />
         )}
 
         {activePage === "Upload" && (
-          <Upload setActivePage={setActivePage} />
+          <Upload
+            setActivePage={setActivePage}
+            setPendingFile={setPendingFile}
+            setCurrentDocument={setCurrentDocument}
+          />
         )}
 
         {activePage === "Processing" && (
-          <Processing setActivePage={setActivePage} />
+          <Processing
+            setActivePage={setActivePage}
+            pendingFile={pendingFile}
+            setPendingFile={setPendingFile}
+            currentDocument={currentDocument}
+            setCurrentDocument={setCurrentDocument}
+          />
         )}
 
         {activePage === "Documents" && (
-          <Documents />
+          <Documents
+            setActivePage={setActivePage}
+            onSelectDocument={handleViewDocumentObligations}
+            setPendingFile={setPendingFile}
+          />
         )}
 
         {activePage === "Obligations" && (
-          <Obligations />
+          <Obligations
+            currentDocument={currentDocument}
+            setCurrentDocument={setCurrentDocument}
+            setActivePage={setActivePage}
+          />
         )}
 
         {activePage === "Tasks" && (

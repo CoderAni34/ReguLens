@@ -76,3 +76,34 @@ def get_obligations_by_document_id(db: Session, document_id: int) -> List[Obliga
     """Retrieve all obligations associated with a specific document ID."""
     return db.query(Obligation).filter(Obligation.document_id == document_id).all()
 
+
+def update_obligation(db: Session, obligation_id: int, update_data: dict) -> Optional[Obligation]:
+    """Update an existing obligation by its ID."""
+    obligation = get_obligation_by_id(db, obligation_id)
+    if not obligation:
+        return None
+    try:
+        for key, value in update_data.items():
+            if value is not None and hasattr(obligation, key):
+                setattr(obligation, key, value)
+        db.commit()
+        db.refresh(obligation)
+        return obligation
+    except Exception:
+        db.rollback()
+        raise
+
+
+def delete_obligation(db: Session, obligation_id: int) -> bool:
+    """Delete an obligation by its ID."""
+    obligation = get_obligation_by_id(db, obligation_id)
+    if not obligation:
+        return False
+    try:
+        db.delete(obligation)
+        db.commit()
+        return True
+    except Exception:
+        db.rollback()
+        raise
+

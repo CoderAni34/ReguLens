@@ -23,10 +23,11 @@ logger = logging.getLogger("ReguLens.AI")
 
 # Auto-fallback Gemini Model Hierarchy
 FALLBACK_MODELS = [
-    "models/gemini-3-flash-preview",
     "models/gemini-3.6-flash",
+    "models/gemini-3.7-flash",
     "models/gemini-3.5-flash",
-    "models/gemini-flash-latest"
+    "models/gemini-flash-latest",
+    "models/gemini-3-flash-preview",
 ]
 
 MAX_PDF_CHARS = 200000

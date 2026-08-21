@@ -21,6 +21,21 @@ class ObligationCreate(ObligationBase):
     status: Optional[str] = "active"
 
 
+class ObligationUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    responsible_unit: Optional[str] = None
+    deadline: Optional[str] = None
+    evidence_required: Optional[str] = None
+    penalty: Optional[str] = None
+    category: Optional[str] = None
+    priority: Optional[str] = None
+    source_text: Optional[str] = None
+    source_page: Optional[int] = None
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    status: Optional[str] = None
+
+
 class ObligationResponse(ObligationBase):
     id: int
     document_id: int

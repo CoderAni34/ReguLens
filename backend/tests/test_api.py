@@ -457,3 +457,59 @@ def test_upload_file_cleanup_on_db_error(client, monkeypatch):
     assert "Failed to create document record" in response.json()["detail"]
 
 
+def test_delete_document(client):
+    doc_id = upload_test_pdf(client, "to_delete.pdf")
+    resp = client.delete(f"/documents/{doc_id}")
+    assert resp.status_code == 204
+
+    # Verify 404 on subsequent get
+    get_resp = client.get(f"/documents/{doc_id}")
+    assert get_resp.status_code == 404
+
+    # Delete non-existent document
+    del_404 = client.delete("/documents/99999")
+    assert del_404.status_code == 404
+
+
+def test_create_and_update_and_delete_obligation(client):
+    doc_id = upload_test_pdf(client, "obs_crud_doc.pdf")
+
+    # Create obligation
+    obs_payload = {
+        "document_id": doc_id,
+        "title": "Manual Compliance Task",
+        "description": "Ensure encryption at rest is enabled.",
+        "responsible_unit": "IT Security",
+        "deadline": "2026-12-31",
+        "evidence_required": "KMS configuration audit log",
+        "penalty": "Fine up to 5 Lakhs",
+        "category": "Compliance",
+        "priority": "High",
+        "source_text": "Clause 4.1: Encryption at rest is mandatory.",
+        "source_page": 2,
+        "confidence": 1.0,
+        "status": "Pending",
+    }
+    create_resp = client.post("/obligations", json=obs_payload)
+    assert create_resp.status_code == 201
+    created_obs = create_resp.json()
+    assert created_obs["title"] == "Manual Compliance Task"
+    assert created_obs["status"] == "Pending"
+    obs_id = created_obs["id"]
+
+    # Update obligation
+    patch_resp = client.patch(f"/obligations/{obs_id}", json={"status": "Completed", "priority": "Medium"})
+    assert patch_resp.status_code == 200
+    updated_obs = patch_resp.json()
+    assert updated_obs["status"] == "Completed"
+    assert updated_obs["priority"] == "Medium"
+
+    # Delete obligation
+    del_resp = client.delete(f"/obligations/{obs_id}")
+    assert del_resp.status_code == 204
+
+    # Verify 404 on subsequent get
+    get_resp = client.get(f"/obligations/{obs_id}")
+    assert get_resp.status_code == 404
+
+

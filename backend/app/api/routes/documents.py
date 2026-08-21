@@ -137,3 +137,21 @@ async def analyze_document_endpoint(document_id: int, db: Session = Depends(get_
         "obligations": obligations,
     }
 
+
+@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_document_endpoint(document_id: int, db: Session = Depends(get_db)):
+    document = document_service.get_document_by_id(db=db, document_id=document_id)
+    if not document:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Document not found",
+        )
+    # Remove file from disk if it exists
+    if document.file_path and os.path.exists(document.file_path):
+        try:
+            os.remove(document.file_path)
+        except OSError:
+            pass
+    document_service.delete_document(db=db, document_id=document_id)
+    return None
+
