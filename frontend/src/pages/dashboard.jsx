@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+import { testGemini } from "../services/gemini";
 
 const documents = [
   {
@@ -40,46 +41,119 @@ const documents = [
 ];
 
 function Dashboard({ setActivePage }) {
+  const [aiResponse, setAiResponse] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [selectedDocument, setSelectedDocument] = useState(null);
+
+  const handleGeminiTest = async () => {
+    setLoading(true);
+    setAiResponse("");
+
+    try {
+      const result = await testGemini();
+      setAiResponse(result);
+    } catch (error) {
+      console.error("Gemini Error:", error);
+
+      setAiResponse(
+        "Gemini connection failed. Check the browser console."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleOpenDocument = (document) => {
+    setSelectedDocument(document);
+  };
+
+  const closeDocumentModal = () => {
+    setSelectedDocument(null);
+  };
+
   return (
     <main className="page-content">
+      {/* HEADER */}
       <header className="top-header">
         <div>
           <h1>Welcome back, BANGGG</h1>
-          <p>Here's what's happening across your compliance workspace.</p>
+
+          <p>
+            Here's what's happening across your compliance workspace.
+          </p>
         </div>
 
-        <button
-          className="upload-btn"
-          onClick={() => setActivePage("Upload")}
-        >
-          + Upload Document
-        </button>
+        <div className="header-actions">
+          <button
+            className="upload-btn"
+            onClick={handleGeminiTest}
+            disabled={loading}
+          >
+            {loading ? "Testing AI..." : "Test Gemini AI"}
+          </button>
+
+          <button
+            className="upload-btn"
+            onClick={() => setActivePage("Upload")}
+          >
+            + Upload Document
+          </button>
+        </div>
       </header>
 
+      {/* GEMINI RESPONSE */}
+      {aiResponse && (
+        <div className="ai-response">
+          <strong>Gemini AI Response</strong>
+
+          <p>{aiResponse}</p>
+        </div>
+      )}
+
+      {/* STATISTICS */}
       <section className="stats-grid">
-        <div className="stat-card">
+        <button
+          className="stat-card clickable-card"
+          onClick={() => setActivePage("Documents")}
+        >
           <p>DOCUMENTS PROCESSED</p>
           <h2>42</h2>
           <span className="muted">+8 from last month</span>
-        </div>
+        </button>
 
-        <div className="stat-card">
+        <button
+          className="stat-card clickable-card"
+          onClick={() => setActivePage("Obligations")}
+        >
           <p>ACTIVE OBLIGATIONS</p>
           <h2>318</h2>
           <span className="muted">14 pending review</span>
-        </div>
+        </button>
 
-        <div className="stat-card warning-card">
+        <button
+          className="stat-card warning-card clickable-card"
+          onClick={() => setActivePage("Tasks")}
+        >
           <p>DEADLINES THIS MONTH</p>
           <h2>12</h2>
-          <span className="warning-text">4 due within 7 days</span>
-        </div>
+
+          <span className="warning-text">
+            4 due within 7 days
+          </span>
+        </button>
       </section>
 
+      {/* RECENT DOCUMENTS */}
       <section className="documents-section">
         <div className="section-header">
           <h2>Recent Documents</h2>
-          <button className="view-all">View all →</button>
+
+          <button
+            className="view-all"
+            onClick={() => setActivePage("Documents")}
+          >
+            View all →
+          </button>
         </div>
 
         <div className="table-wrapper">
@@ -115,7 +189,12 @@ function Dashboard({ setActivePage }) {
                   <td>{document.uploaded}</td>
 
                   <td>
-                    <button className="open-btn">Open</button>
+                    <button
+                      className="open-btn"
+                      onClick={() => handleOpenDocument(document)}
+                    >
+                      Open
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -123,6 +202,74 @@ function Dashboard({ setActivePage }) {
           </table>
         </div>
       </section>
+
+      {/* DOCUMENT PREVIEW MODAL */}
+      {selectedDocument && (
+        <div
+          className="document-modal-overlay"
+          onClick={closeDocumentModal}
+        >
+          <div
+            className="document-modal"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <p className="modal-label">DOCUMENT DETAILS</p>
+                <h2>{selectedDocument.name}</h2>
+              </div>
+
+              <button
+                className="modal-close"
+                onClick={closeDocumentModal}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="modal-content">
+              <div className="modal-detail">
+                <span>Status</span>
+
+                <strong
+                  className={`status ${selectedDocument.status.toLowerCase()}`}
+                >
+                  {selectedDocument.status}
+                </strong>
+              </div>
+
+              <div className="modal-detail">
+                <span>Obligations Extracted</span>
+                <strong>{selectedDocument.obligations}</strong>
+              </div>
+
+              <div className="modal-detail">
+                <span>Uploaded</span>
+                <strong>{selectedDocument.uploaded}</strong>
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button
+                className="modal-secondary-btn"
+                onClick={closeDocumentModal}
+              >
+                Close
+              </button>
+
+              <button
+                className="upload-btn"
+                onClick={() => {
+                  closeDocumentModal();
+                  setActivePage("Documents");
+                }}
+              >
+                View Document
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

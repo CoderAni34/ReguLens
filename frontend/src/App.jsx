@@ -9,6 +9,8 @@ import Tasks from "./pages/Tasks";
 import Conflicts from "./pages/Conflicts";
 import Evidence from "./pages/Evidence";
 import Reports from "./pages/Reports";
+import Documents from "./pages/document";
+import Settings from "./pages/Settings";
 
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
@@ -49,6 +51,10 @@ function App() {
             )}
 
 {activePage === "Evidence" && <Evidence />}
+{activePage === "Documents" && <Documents />}
+{activePage === "Settings" && (
+  <Settings />
+)}
 
         {![
           "Dashboard",
@@ -59,6 +65,8 @@ function App() {
           "Conflicts",
           "Reports",
           "Evidence",
+          "Document",
+          "Settings",
         ].includes(activePage) && (
           <main className="placeholder-page">
             <h1>{activePage}</h1>
