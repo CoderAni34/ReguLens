@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import { testGemini } from "../services/gemini";
 
 const documents = [
   {
@@ -41,27 +40,7 @@ const documents = [
 ];
 
 function Dashboard({ setActivePage }) {
-  const [aiResponse, setAiResponse] = useState("");
-  const [loading, setLoading] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState(null);
-
-  const handleGeminiTest = async () => {
-    setLoading(true);
-    setAiResponse("");
-
-    try {
-      const result = await testGemini();
-      setAiResponse(result);
-    } catch (error) {
-      console.error("Gemini Error:", error);
-
-      setAiResponse(
-        "Gemini connection failed. Check the browser console."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleOpenDocument = (document) => {
     setSelectedDocument(document);
@@ -86,29 +65,12 @@ function Dashboard({ setActivePage }) {
         <div className="header-actions">
           <button
             className="upload-btn"
-            onClick={handleGeminiTest}
-            disabled={loading}
-          >
-            {loading ? "Testing AI..." : "Test Gemini AI"}
-          </button>
-
-          <button
-            className="upload-btn"
             onClick={() => setActivePage("Upload")}
           >
             + Upload Document
           </button>
         </div>
       </header>
-
-      {/* GEMINI RESPONSE */}
-      {aiResponse && (
-        <div className="ai-response">
-          <strong>Gemini AI Response</strong>
-
-          <p>{aiResponse}</p>
-        </div>
-      )}
 
       {/* STATISTICS */}
       <section className="stats-grid">
