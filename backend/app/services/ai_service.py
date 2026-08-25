@@ -5,7 +5,7 @@ Production-grade compliance extraction engine using Google Gemini.
 Extracts regulatory compliance obligations, deadlines, responsible units,
 evidence, and source references from PDF circulars.
 """
-
+import asyncio
 import os
 import re
 import json
@@ -124,10 +124,17 @@ class RegulatoryAIEngine:
                             logger.info(f"Successful response received from '{model_name}'.")
                             return response.text
                         raise ValueError("Empty response payload from Gemini API.")
+                    # except Exception as exc:
+                    #     err = str(exc)
+                    #     last_exception = exc
+                    #     logger.warning(f"Attempt {attempt} failed on '{model_name}': {err[:150]}")
                     except Exception as exc:
                         err = str(exc)
                         last_exception = exc
-                        logger.warning(f"Attempt {attempt} failed on '{model_name}': {err[:150]}")
+                        logger.exception(
+                            f"Gemini request failed on model '{model_name}' "
+                            f"(attempt {attempt}/{MAX_RETRIES}): {err}"
+                        )
                         
                         # Handle 429 rate limit or 404 retired model by failing over to next model
                         if "429" in err or "quota" in err.lower() or "ResourceExhausted" in err:
@@ -204,59 +211,182 @@ class RegulatoryAIEngine:
 ai_engine = RegulatoryAIEngine()
 
 
-async def analyze_document(document_id: int, file_path: Optional[str] = None) -> AIResponse:
-    """
-    Main endpoint integration called by POST /documents/{document_id}/analyze.
-    Extracts text from the uploaded PDF, processes with Gemini, and constructs an AIResponse.
-    """
+# async def analyze_document(document_id: int, file_path: Optional[str] = None) -> AIResponse:
+#     """
+#     Main endpoint integration called by POST /documents/{document_id}/analyze.
+#     Extracts text from the uploaded PDF, processes with Gemini, and constructs an AIResponse.
+#     """
+#     # Resolve file path if not passed explicitly
+#     if not file_path:
+#         upload_dir = "uploads"
+#         if os.path.exists(upload_dir):
+#             files = [os.path.join(upload_dir, f) for f in os.listdir(upload_dir) if os.path.isfile(os.path.join(upload_dir, f))]
+#             file_path = files[0] if files else None
+
+#     if not file_path or not os.path.exists(file_path):
+#         raise FileNotFoundError(f"PDF file for document ID {document_id} was not found on disk at '{file_path}'.")
+
+#     # 1. Extract text
+#     text, page_count = ai_engine.extract_text_from_pdf(file_path)
+
+#     # 2. Extract obligations via Gemini
+#     raw_obligations = ai_engine.extract_obligations(text)
+
+#     # 3. Build AIDocumentInfo
+#     doc_title = os.path.splitext(os.path.basename(file_path))[0].replace("_", " ")
+#     doc_info = AIDocumentInfo(
+#         title=doc_title,
+#         document_type="Regulatory Policy / Circular",
+#         language="en",
+#         version="1.0"
+#     )
+
+#     # 4. Construct AIObligation schemas
+#     pydantic_obligations: List[AIObligation] = []
+#     for item in raw_obligations:
+#         desc = str(item.get("description") or item.get("obligation") or "Not specified").strip()
+#         title = str(item.get("title") or (desc[:60] + "..." if len(desc) > 60 else desc)).strip()
+#         resp_unit = item.get("responsible_unit") or "Not specified"
+#         deadline = item.get("deadline") or "Not specified"
+#         evidence = item.get("evidence_required") or "Not specified"
+#         penalty = item.get("penalty")
+#         if penalty and str(penalty).lower() == "not specified":
+#             penalty = None
+        
+#         category = item.get("category")
+#         if category and str(category).lower() == "not specified":
+#             category = None
+            
+#         priority = item.get("priority")
+#         if priority and str(priority).lower() == "not specified":
+#             priority = None
+            
+#         source_text = item.get("source_text") or desc
+
+#         p_val = item.get("page_number") or item.get("source_page") or 1
+#         try:
+#             match = re.search(r"\d+", str(p_val))
+#             source_page = int(match.group(0)) if match else 1
+#         except Exception:
+#             source_page = 1
+
+#         try:
+#             confidence = float(item.get("confidence", 0.95))
+#             confidence = max(0.0, min(1.0, confidence))
+#         except Exception:
+#             confidence = 0.95
+
+#         obligation_obj = AIObligation(
+#             title=title,
+#             description=desc,
+#             responsible_unit=resp_unit,
+#             deadline=deadline,
+#             evidence_required=evidence,
+#             penalty=penalty,
+#             category=category,
+#             priority=priority,
+#             source_text=source_text,
+#             source_page=source_page,
+#             confidence=confidence
+#         )
+#         pydantic_obligations.append(obligation_obj)
+
+#     return AIResponse(
+#         document=doc_info,
+#         obligations=pydantic_obligations
+#     )
+async def analyze_document(
+    document_id: int,
+    file_path: Optional[str] = None
+) -> AIResponse:
+
     # Resolve file path if not passed explicitly
     if not file_path:
         upload_dir = "uploads"
+
         if os.path.exists(upload_dir):
-            files = [os.path.join(upload_dir, f) for f in os.listdir(upload_dir) if os.path.isfile(os.path.join(upload_dir, f))]
+            files = [
+                os.path.join(upload_dir, f)
+                for f in os.listdir(upload_dir)
+                if os.path.isfile(os.path.join(upload_dir, f))
+            ]
+
             file_path = files[0] if files else None
 
     if not file_path or not os.path.exists(file_path):
-        raise FileNotFoundError(f"PDF file for document ID {document_id} was not found on disk at '{file_path}'.")
+        raise FileNotFoundError(
+            f"PDF file for document ID {document_id} "
+            f"was not found on disk at '{file_path}'."
+        )
 
-    # 1. Extract text
-    text, page_count = ai_engine.extract_text_from_pdf(file_path)
+    logger.info(f"Starting analysis for document {document_id}")
 
-    # 2. Extract obligations via Gemini
-    raw_obligations = ai_engine.extract_obligations(text)
+    # Run blocking PDF extraction in a separate thread
+    text, page_count = await asyncio.to_thread(
+        ai_engine.extract_text_from_pdf,
+        file_path
+    )
 
-    # 3. Build AIDocumentInfo
-    doc_title = os.path.splitext(os.path.basename(file_path))[0].replace("_", " ")
+    logger.info(
+        f"Extracted {len(text)} characters from {page_count} pages"
+    )
+
+    # Run blocking Gemini API call in a separate thread
+    raw_obligations = await asyncio.to_thread(
+        ai_engine.extract_obligations,
+        text
+    )
+
+    logger.info(
+        f"Gemini returned {len(raw_obligations)} obligations"
+    )
+
+    doc_title = (
+        os.path.splitext(os.path.basename(file_path))[0]
+        .replace("_", " ")
+    )
+
     doc_info = AIDocumentInfo(
         title=doc_title,
         document_type="Regulatory Policy / Circular",
         language="en",
-        version="1.0"
+        version="1.0",
     )
 
-    # 4. Construct AIObligation schemas
     pydantic_obligations: List[AIObligation] = []
+
     for item in raw_obligations:
-        desc = str(item.get("description") or item.get("obligation") or "Not specified").strip()
-        title = str(item.get("title") or (desc[:60] + "..." if len(desc) > 60 else desc)).strip()
+        desc = str(
+            item.get("description")
+            or item.get("obligation")
+            or "Not specified"
+        ).strip()
+
+        title = str(
+            item.get("title")
+            or (desc[:60] + "..." if len(desc) > 60 else desc)
+        ).strip()
+
         resp_unit = item.get("responsible_unit") or "Not specified"
         deadline = item.get("deadline") or "Not specified"
         evidence = item.get("evidence_required") or "Not specified"
+
         penalty = item.get("penalty")
         if penalty and str(penalty).lower() == "not specified":
             penalty = None
-        
+
         category = item.get("category")
         if category and str(category).lower() == "not specified":
             category = None
-            
+
         priority = item.get("priority")
         if priority and str(priority).lower() == "not specified":
             priority = None
-            
+
         source_text = item.get("source_text") or desc
 
         p_val = item.get("page_number") or item.get("source_page") or 1
+
         try:
             match = re.search(r"\d+", str(p_val))
             source_page = int(match.group(0)) if match else 1
@@ -269,22 +399,23 @@ async def analyze_document(document_id: int, file_path: Optional[str] = None) ->
         except Exception:
             confidence = 0.95
 
-        obligation_obj = AIObligation(
-            title=title,
-            description=desc,
-            responsible_unit=resp_unit,
-            deadline=deadline,
-            evidence_required=evidence,
-            penalty=penalty,
-            category=category,
-            priority=priority,
-            source_text=source_text,
-            source_page=source_page,
-            confidence=confidence
+        pydantic_obligations.append(
+            AIObligation(
+                title=title,
+                description=desc,
+                responsible_unit=resp_unit,
+                deadline=deadline,
+                evidence_required=evidence,
+                penalty=penalty,
+                category=category,
+                priority=priority,
+                source_text=source_text,
+                source_page=source_page,
+                confidence=confidence,
+            )
         )
-        pydantic_obligations.append(obligation_obj)
 
     return AIResponse(
         document=doc_info,
-        obligations=pydantic_obligations
+        obligations=pydantic_obligations,
     )
