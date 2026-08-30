@@ -242,8 +242,17 @@ async def analyze_document(document_id: int, file_path: Optional[str] = None) ->
         deadline = item.get("deadline") or "Not specified"
         evidence = item.get("evidence_required") or "Not specified"
         penalty = item.get("penalty")
-        if penalty and str(penalty).lower() != "not specified":
-            evidence = f"{evidence} | Penalty: {penalty}"
+        if penalty and str(penalty).lower() == "not specified":
+            penalty = None
+        
+        category = item.get("category")
+        if category and str(category).lower() == "not specified":
+            category = None
+            
+        priority = item.get("priority")
+        if priority and str(priority).lower() == "not specified":
+            priority = None
+            
         source_text = item.get("source_text") or desc
 
         p_val = item.get("page_number") or item.get("source_page") or 1
@@ -265,6 +274,9 @@ async def analyze_document(document_id: int, file_path: Optional[str] = None) ->
             responsible_unit=resp_unit,
             deadline=deadline,
             evidence_required=evidence,
+            penalty=penalty,
+            category=category,
+            priority=priority,
             source_text=source_text,
             source_page=source_page,
             confidence=confidence
