@@ -11,9 +11,22 @@ import Conflicts from "./pages/Conflicts";
 import Evidence from "./pages/Evidence";
 import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
+import Login from "./pages/Login";
+
+import {
+  getStoredToken,
+  getStoredUser,
+  getCurrentUser,
+  logoutUser,
+  setAuthSession,
+} from "./services/api";
 
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
+  const [token, setToken] = useState(() => getStoredToken());
+  const [user, setUser] = useState(() => getStoredUser());
+  const [authLoading, setAuthLoading] = useState(true);
+
   const [currentDocument, setCurrentDocumentState] = useState(() => {
     try {
       const saved = sessionStorage.getItem("regulens_current_document");
@@ -23,6 +36,45 @@ function App() {
     }
   });
   const [pendingFile, setPendingFile] = useState(null);
+
+  // Validate or restore authentication session on initial app load
+  useEffect(() => {
+    async function restoreSession() {
+      const existingToken = getStoredToken();
+      if (!existingToken) {
+        setAuthLoading(false);
+        return;
+      }
+
+      try {
+        const profile = await getCurrentUser();
+        setUser(profile);
+      } catch (err) {
+        console.warn("Session expired or invalid, clearing credentials:", err.message);
+        logoutUser();
+        setToken(null);
+        setUser(null);
+      } finally {
+        setAuthLoading(false);
+      }
+    }
+
+    restoreSession();
+  }, []);
+
+  const handleLoginSuccess = (newToken, newUser, rememberMe) => {
+    setToken(newToken);
+    setUser(newUser);
+    setAuthSession(newToken, newUser, rememberMe);
+    setActivePage("Dashboard");
+  };
+
+  const handleLogout = async () => {
+    await logoutUser();
+    setToken(null);
+    setUser(null);
+    setActivePage("Dashboard");
+  };
 
   const setCurrentDocument = (doc) => {
     setCurrentDocumentState(doc);
@@ -43,11 +95,52 @@ function App() {
     setActivePage("Obligations");
   };
 
+  // Initial Auth Verification Loading Splash
+  if (authLoading) {
+    return (
+      <div style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#070b10",
+        color: "#94a3b8",
+        fontFamily: "Inter, system-ui, -apple-system, sans-serif",
+      }}>
+        <div style={{
+          width: "48px",
+          height: "48px",
+          borderRadius: "10px",
+          background: "rgba(229, 166, 9, 0.15)",
+          border: "1px solid rgba(229, 166, 9, 0.3)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: "#e5a609",
+          fontSize: "28px",
+          fontWeight: "700",
+          marginBottom: "16px",
+        }}>
+          ⬡
+        </div>
+        <p style={{ fontSize: "14px", color: "#cbd5e1" }}>Initializing ReguLens Workspace...</p>
+      </div>
+    );
+  }
+
+  // Unauthenticated user -> render Login page
+  if (!token || !user) {
+    return <Login onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <div className="app">
       <Sidebar
         activePage={activePage}
         setActivePage={setActivePage}
+        user={user}
+        onLogout={handleLogout}
       />
 
       <div className="main-area">

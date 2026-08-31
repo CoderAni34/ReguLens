@@ -444,7 +444,7 @@ def test_analyze_document_invalid_ai_response(client, monkeypatch):
 
 
 def test_upload_file_cleanup_on_db_error(client, monkeypatch):
-    file_content = b"%PDF-1.4 sample content"
+    file_content = create_mock_pdf_bytes()
     files = {"file": ("orphan_test.pdf", io.BytesIO(file_content), "application/pdf")}
 
     def mock_failing_create_document(*args, **kwargs):

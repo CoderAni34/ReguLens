@@ -7,14 +7,16 @@ def create_document(
     db: Session,
     filename: str,
     file_path: str,
+    user_id: int = 1,
     title: Optional[str] = None,
     document_type: Optional[str] = None,
     language: Optional[str] = None,
     version: Optional[str] = None,
     processing_status: str = "uploaded",
 ) -> Document:
-    """Create and persist a new document record in the database."""
+    """Create and persist a new document record associated with a user."""
     db_document = Document(
+        user_id=user_id,
         title=title if title is not None else filename,
         filename=filename,
         file_path=file_path,
@@ -33,19 +35,25 @@ def create_document(
         raise
 
 
-def get_document_by_id(db: Session, document_id: int) -> Optional[Document]:
-    """Retrieve a document by its primary key ID."""
-    return db.query(Document).filter(Document.id == document_id).first()
+def get_document_by_id(db: Session, document_id: int, user_id: Optional[int] = None) -> Optional[Document]:
+    """Retrieve a document by its primary key ID, optionally scoped to a user."""
+    query = db.query(Document).filter(Document.id == document_id)
+    if user_id is not None:
+        query = query.filter(Document.user_id == user_id)
+    return query.first()
 
 
-def get_documents(db: Session, skip: int = 0, limit: int = 100) -> List[Document]:
-    """Retrieve a list of documents with pagination."""
-    return db.query(Document).offset(skip).limit(limit).all()
+def get_documents(db: Session, user_id: Optional[int] = None, skip: int = 0, limit: int = 100) -> List[Document]:
+    """Retrieve a list of documents with pagination, optionally scoped to a user."""
+    query = db.query(Document)
+    if user_id is not None:
+        query = query.filter(Document.user_id == user_id)
+    return query.offset(skip).limit(limit).all()
 
 
-def update_processing_status(db: Session, document_id: int, status: str) -> Optional[Document]:
+def update_processing_status(db: Session, document_id: int, status: str, user_id: Optional[int] = None) -> Optional[Document]:
     """Update the processing status of a document."""
-    document = get_document_by_id(db, document_id)
+    document = get_document_by_id(db, document_id, user_id=user_id)
     if not document:
         return None
     try:
@@ -66,9 +74,10 @@ def update_document_metadata(
     language: Optional[str] = None,
     version: Optional[str] = None,
     processing_status: Optional[str] = None,
+    user_id: Optional[int] = None,
 ) -> Optional[Document]:
     """Update document metadata fields and status."""
-    document = get_document_by_id(db, document_id)
+    document = get_document_by_id(db, document_id, user_id=user_id)
     if not document:
         return None
     try:
@@ -90,9 +99,9 @@ def update_document_metadata(
         raise
 
 
-def delete_document(db: Session, document_id: int) -> bool:
+def delete_document(db: Session, document_id: int, user_id: Optional[int] = None) -> bool:
     """Delete a document and its cascade relations."""
-    document = get_document_by_id(db, document_id)
+    document = get_document_by_id(db, document_id, user_id=user_id)
     if not document:
         return False
     try:
@@ -102,4 +111,3 @@ def delete_document(db: Session, document_id: int) -> bool:
     except Exception:
         db.rollback()
         raise
-

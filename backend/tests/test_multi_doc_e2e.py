@@ -288,6 +288,26 @@ def test_multi_document_end_to_end():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
+    # Seed test user
+    from app.db.models.user import User
+    from app.core.security import hash_password, create_access_token
+    test_user = db.query(User).filter(User.email == "multi_e2e@regulens.ai").first()
+    if not test_user:
+        test_user = User(
+            email="multi_e2e@regulens.ai",
+            hashed_password=hash_password("Password@123"),
+            full_name="Multi E2E User",
+            role="Auditor",
+            is_active=True,
+        )
+        db.add(test_user)
+        db.commit()
+        db.refresh(test_user)
+
+    token = create_access_token({"sub": str(test_user.id), "email": test_user.email})
+    headers = {"Authorization": f"Bearer {token}"}
+    client.headers.update(headers)
+
     # 2. Upload Document A
     with open(DOC_A_PATH, "rb") as f:
         resp_upload_a = client.post("/documents/upload", files={"file": ("regulens_security_compliance_policy_2026.pdf", f, "application/pdf")})
@@ -363,6 +383,17 @@ def test_multi_document_end_to_end():
     assert all_obs_resp.status_code == 200
     all_obs = all_obs_resp.json()
     assert len(all_obs) >= 19
+
+    # Clean up test-created records so the local database remains clean
+    db = SessionLocal()
+    try:
+        from app.db.models.document import Document
+        from app.db.models.obligation import Obligation
+        db.query(Obligation).filter(Obligation.document_id.in_([doc_a_id, doc_b_id])).delete(synchronize_session=False)
+        db.query(Document).filter(Document.id.in_([doc_a_id, doc_b_id])).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
 
     print(f"\n[PASS] Multi-Document E2E Test Succeeded!")
     print(f"Document A (ID #{doc_a_id}): {len(obs_a_list)} obligations extracted (Cybersecurity Framework)")

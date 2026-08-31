@@ -1,6 +1,7 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.db.models.obligation import Obligation
+from app.db.models.document import Document
 from app.schemas.obligation import ObligationCreate
 
 
@@ -62,24 +63,33 @@ def create_obligations_bulk(db: Session, obligations_data: List[ObligationCreate
     return db_obligations
 
 
-def get_obligation_by_id(db: Session, obligation_id: int) -> Optional[Obligation]:
-    """Retrieve an obligation by its primary key ID."""
-    return db.query(Obligation).filter(Obligation.id == obligation_id).first()
+def get_obligation_by_id(db: Session, obligation_id: int, user_id: Optional[int] = None) -> Optional[Obligation]:
+    """Retrieve an obligation by its primary key ID, optionally scoped to a user."""
+    query = db.query(Obligation)
+    if user_id is not None:
+        query = query.join(Document, Obligation.document_id == Document.id).filter(Document.user_id == user_id)
+    return query.filter(Obligation.id == obligation_id).first()
 
 
-def get_obligations(db: Session, skip: int = 0, limit: int = 100) -> List[Obligation]:
-    """Retrieve a list of all obligations with pagination."""
-    return db.query(Obligation).offset(skip).limit(limit).all()
+def get_obligations(db: Session, user_id: Optional[int] = None, skip: int = 0, limit: int = 100) -> List[Obligation]:
+    """Retrieve a list of obligations with pagination, optionally scoped to a user."""
+    query = db.query(Obligation)
+    if user_id is not None:
+        query = query.join(Document, Obligation.document_id == Document.id).filter(Document.user_id == user_id)
+    return query.offset(skip).limit(limit).all()
 
 
-def get_obligations_by_document_id(db: Session, document_id: int) -> List[Obligation]:
-    """Retrieve all obligations associated with a specific document ID."""
-    return db.query(Obligation).filter(Obligation.document_id == document_id).all()
+def get_obligations_by_document_id(db: Session, document_id: int, user_id: Optional[int] = None) -> List[Obligation]:
+    """Retrieve all obligations associated with a specific document ID, optionally scoped to a user."""
+    query = db.query(Obligation)
+    if user_id is not None:
+        query = query.join(Document, Obligation.document_id == Document.id).filter(Document.user_id == user_id)
+    return query.filter(Obligation.document_id == document_id).all()
 
 
-def update_obligation(db: Session, obligation_id: int, update_data: dict) -> Optional[Obligation]:
-    """Update an existing obligation by its ID."""
-    obligation = get_obligation_by_id(db, obligation_id)
+def update_obligation(db: Session, obligation_id: int, update_data: dict, user_id: Optional[int] = None) -> Optional[Obligation]:
+    """Update an existing obligation by its ID, scoped to a user."""
+    obligation = get_obligation_by_id(db, obligation_id, user_id=user_id)
     if not obligation:
         return None
     try:
@@ -94,9 +104,9 @@ def update_obligation(db: Session, obligation_id: int, update_data: dict) -> Opt
         raise
 
 
-def delete_obligation(db: Session, obligation_id: int) -> bool:
-    """Delete an obligation by its ID."""
-    obligation = get_obligation_by_id(db, obligation_id)
+def delete_obligation(db: Session, obligation_id: int, user_id: Optional[int] = None) -> bool:
+    """Delete an obligation by its ID, scoped to a user."""
+    obligation = get_obligation_by_id(db, obligation_id, user_id=user_id)
     if not obligation:
         return False
     try:
@@ -106,4 +116,3 @@ def delete_obligation(db: Session, obligation_id: int) -> bool:
     except Exception:
         db.rollback()
         raise
-

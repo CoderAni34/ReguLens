@@ -20,6 +20,7 @@ class DocumentCreate(DocumentBase):
 
 class DocumentResponse(DocumentBase):
     id: int
+    user_id: Optional[int] = None
     filename: str
     file_path: str
     uploaded_at: datetime

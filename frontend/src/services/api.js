@@ -8,12 +8,67 @@
 const rawApiBaseUrl = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 const API_BASE_URL = rawApiBaseUrl.replace(/\/+$/, "");
 
+const AUTH_TOKEN_KEY = "regulens_auth_token";
+const AUTH_USER_KEY = "regulens_auth_user";
+
+// ==========================================
+// Authentication Storage Helpers
+// ==========================================
+
+export function getStoredToken() {
+  try {
+    return localStorage.getItem(AUTH_TOKEN_KEY) || sessionStorage.getItem(AUTH_TOKEN_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function getStoredUser() {
+  try {
+    const raw = localStorage.getItem(AUTH_USER_KEY) || sessionStorage.getItem(AUTH_USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setAuthSession(token, user, rememberMe = true) {
+  try {
+    clearAuthSession();
+    const storage = rememberMe ? localStorage : sessionStorage;
+    if (token) storage.setItem(AUTH_TOKEN_KEY, token);
+    if (user) storage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+  } catch (err) {
+    console.warn("Failed to persist auth session in storage:", err);
+  }
+}
+
+export function clearAuthSession() {
+  try {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+    localStorage.removeItem(AUTH_USER_KEY);
+    sessionStorage.removeItem(AUTH_TOKEN_KEY);
+    sessionStorage.removeItem(AUTH_USER_KEY);
+  } catch (err) {
+    console.warn("Failed to clear auth session:", err);
+  }
+}
+
+function getAuthHeaders(extraHeaders = {}) {
+  const token = getStoredToken();
+  const headers = { ...extraHeaders };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 async function handleResponse(response, customErrorMessage) {
   if (!response.ok) {
     let errorDetail = "";
     try {
       const data = await response.json();
-      errorDetail = data.detail || JSON.stringify(data);
+      errorDetail = data.detail || (typeof data === "string" ? data : JSON.stringify(data));
     } catch {
       errorDetail = response.statusText || `HTTP ${response.status}`;
     }
@@ -26,6 +81,100 @@ async function handleResponse(response, customErrorMessage) {
 
   return response.json();
 }
+
+// ==========================================
+// Authentication Endpoints
+// ==========================================
+
+/**
+ * Log in with email and password
+ * @param {Object} credentials - { email, password }
+ */
+export async function loginUser(credentials) {
+  if (!credentials.email || !credentials.password) {
+    throw new Error("Email and password are required.");
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: credentials.email.trim(),
+        password: credentials.password,
+      }),
+    });
+
+    const data = await handleResponse(response, "Login failed");
+    return data;
+  } catch (error) {
+    throw new Error(error.message || "Failed to log in.");
+  }
+}
+
+/**
+ * Register a new user
+ * @param {Object} userData - { email, password, full_name, role }
+ */
+export async function registerUser(userData) {
+  if (!userData.email || !userData.password) {
+    throw new Error("Email and password are required.");
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email: userData.email.trim(),
+        password: userData.password,
+        full_name: userData.full_name || undefined,
+        role: userData.role || "Compliance Officer",
+      }),
+    });
+
+    const data = await handleResponse(response, "Registration failed");
+    return data;
+  } catch (error) {
+    throw new Error(error.message || "Failed to register user.");
+  }
+}
+
+/**
+ * Fetch the authenticated user profile
+ */
+export async function getCurrentUser() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/me`, {
+      method: "GET",
+      headers: getAuthHeaders(),
+    });
+
+    return await handleResponse(response, "Failed to fetch user profile");
+  } catch (error) {
+    throw new Error(error.message || "Authentication expired or invalid.");
+  }
+}
+
+/**
+ * Log out user from current session
+ */
+export async function logoutUser() {
+  try {
+    await fetch(`${API_BASE_URL}/auth/logout`, {
+      method: "POST",
+      headers: getAuthHeaders(),
+    });
+  } catch (err) {
+    console.warn("Backend logout notification skipped:", err);
+  } finally {
+    clearAuthSession();
+  }
+}
+
+// ==========================================
+// Document Management Endpoints
+// ==========================================
 
 /**
  * Health check endpoint
@@ -57,6 +206,7 @@ export async function uploadDocument(file) {
   try {
     const response = await fetch(`${API_BASE_URL}/documents/upload`, {
       method: "POST",
+      headers: getAuthHeaders(),
       body: formData,
     });
     return await handleResponse(response, "Document upload failed");
@@ -77,9 +227,9 @@ export async function analyzeDocument(documentId) {
   try {
     const response = await fetch(`${API_BASE_URL}/documents/${documentId}/analyze`, {
       method: "POST",
-      headers: {
+      headers: getAuthHeaders({
         "Content-Type": "application/json",
-      },
+      }),
     });
     return await handleResponse(response, "AI Document Analysis failed");
   } catch (error) {
@@ -94,7 +244,9 @@ export async function analyzeDocument(documentId) {
  */
 export async function getDocuments(skip = 0, limit = 100) {
   try {
-    const response = await fetch(`${API_BASE_URL}/documents?skip=${skip}&limit=${limit}`);
+    const response = await fetch(`${API_BASE_URL}/documents?skip=${skip}&limit=${limit}`, {
+      headers: getAuthHeaders(),
+    });
     return await handleResponse(response, "Failed to fetch documents");
   } catch (error) {
     throw new Error(error.message || "Failed to retrieve documents.");
@@ -107,7 +259,9 @@ export async function getDocuments(skip = 0, limit = 100) {
  */
 export async function getDocument(documentId) {
   try {
-    const response = await fetch(`${API_BASE_URL}/documents/${documentId}`);
+    const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
+      headers: getAuthHeaders(),
+    });
     return await handleResponse(response, `Failed to fetch document #${documentId}`);
   } catch (error) {
     throw new Error(error.message || "Failed to retrieve document details.");
@@ -122,12 +276,17 @@ export async function deleteDocument(documentId) {
   try {
     const response = await fetch(`${API_BASE_URL}/documents/${documentId}`, {
       method: "DELETE",
+      headers: getAuthHeaders(),
     });
     return await handleResponse(response, `Failed to delete document #${documentId}`);
   } catch (error) {
     throw new Error(error.message || "Failed to delete document.");
   }
 }
+
+// ==========================================
+// Compliance Obligations Endpoints
+// ==========================================
 
 /**
  * Retrieve all obligations across all documents
@@ -136,7 +295,9 @@ export async function deleteDocument(documentId) {
  */
 export async function getObligations(skip = 0, limit = 100) {
   try {
-    const response = await fetch(`${API_BASE_URL}/obligations?skip=${skip}&limit=${limit}`);
+    const response = await fetch(`${API_BASE_URL}/obligations?skip=${skip}&limit=${limit}`, {
+      headers: getAuthHeaders(),
+    });
     return await handleResponse(response, "Failed to fetch obligations");
   } catch (error) {
     throw new Error(error.message || "Failed to retrieve obligations.");
@@ -152,7 +313,9 @@ export async function getObligationsByDocument(documentId) {
     return [];
   }
   try {
-    const response = await fetch(`${API_BASE_URL}/obligations/document/${documentId}`);
+    const response = await fetch(`${API_BASE_URL}/obligations/document/${documentId}`, {
+      headers: getAuthHeaders(),
+    });
     return await handleResponse(response, `Failed to fetch obligations for document #${documentId}`);
   } catch (error) {
     throw new Error(error.message || "Failed to retrieve document obligations.");
@@ -165,7 +328,9 @@ export async function getObligationsByDocument(documentId) {
  */
 export async function getObligation(obligationId) {
   try {
-    const response = await fetch(`${API_BASE_URL}/obligations/${obligationId}`);
+    const response = await fetch(`${API_BASE_URL}/obligations/${obligationId}`, {
+      headers: getAuthHeaders(),
+    });
     return await handleResponse(response, `Failed to fetch obligation #${obligationId}`);
   } catch (error) {
     throw new Error(error.message || "Failed to retrieve obligation details.");
@@ -180,9 +345,9 @@ export async function createObligation(obligationData) {
   try {
     const response = await fetch(`${API_BASE_URL}/obligations`, {
       method: "POST",
-      headers: {
+      headers: getAuthHeaders({
         "Content-Type": "application/json",
-      },
+      }),
       body: JSON.stringify(obligationData),
     });
     return await handleResponse(response, "Failed to create obligation");
@@ -200,9 +365,9 @@ export async function updateObligation(obligationId, updateData) {
   try {
     const response = await fetch(`${API_BASE_URL}/obligations/${obligationId}`, {
       method: "PATCH",
-      headers: {
+      headers: getAuthHeaders({
         "Content-Type": "application/json",
-      },
+      }),
       body: JSON.stringify(updateData),
     });
     return await handleResponse(response, `Failed to update obligation #${obligationId}`);
@@ -219,6 +384,7 @@ export async function deleteObligation(obligationId) {
   try {
     const response = await fetch(`${API_BASE_URL}/obligations/${obligationId}`, {
       method: "DELETE",
+      headers: getAuthHeaders(),
     });
     return await handleResponse(response, `Failed to delete obligation #${obligationId}`);
   } catch (error) {
@@ -227,6 +393,14 @@ export async function deleteObligation(obligationId) {
 }
 
 export default {
+  getStoredToken,
+  getStoredUser,
+  setAuthSession,
+  clearAuthSession,
+  loginUser,
+  registerUser,
+  getCurrentUser,
+  logoutUser,
   checkHealth,
   uploadDocument,
   analyzeDocument,

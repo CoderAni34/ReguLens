@@ -1,23 +1,63 @@
 import React, { useEffect, useState, useRef } from "react";
 import { uploadDocument, analyzeDocument } from "../services/api";
 
-const STEPS = [
-  { id: 0, label: "Uploading document to server", detail: "Transferring PDF payload to secure storage" },
-  { id: 1, label: "Parsing document structure", detail: "Extracting regulatory text and page metadata" },
-  { id: 2, label: "AI analyzing compliance obligations", detail: "Querying Gemini model for regulatory requirements" },
-  { id: 3, label: "Evaluating deadlines & evidence", detail: "Structuring categories, priorities, and confidence scores" },
-  { id: 4, label: "Analysis complete", detail: "Compliance records synchronized successfully" },
+const STAGES = [
+  {
+    id: 1,
+    title: "PDF Validated",
+    detail: "Multi-layer format, size, and PDF integrity verified",
+  },
+  {
+    id: 2,
+    title: "Text Extracted",
+    detail: "PyMuPDF extracted multilingual content and page boundaries",
+  },
+  {
+    id: 3,
+    title: "Analyzing Regulatory Requirements",
+    detail: "AI compliance engine performing deep regulatory analysis",
+  },
+  {
+    id: 4,
+    title: "Structuring Compliance Obligations",
+    detail: "Validating deadlines, responsible units, penalties, and evidence schemas",
+  },
+  {
+    id: 5,
+    title: "Analysis Complete",
+    detail: "Compliance obligations persisted and synchronized with workspace",
+  },
 ];
 
-function Processing({ setActivePage, pendingFile, setPendingFile, currentDocument, setCurrentDocument }) {
-  const [progress, setProgress] = useState(10);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [statusText, setStatusText] = useState("Initializing compliance pipeline...");
+function Processing({
+  setActivePage,
+  pendingFile,
+  setPendingFile,
+  currentDocument,
+  setCurrentDocument,
+}) {
+  const [currentStageId, setCurrentStageId] = useState(1);
+  const [statusMessage, setStatusMessage] = useState("Initializing compliance pipeline...");
   const [error, setError] = useState(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [extractedCount, setExtractedCount] = useState(0);
 
-  // Prevent duplicate execution on fast re-renders
   const executionRef = useRef(false);
+
+  // Live elapsed timer so user always sees continuous activity
+  useEffect(() => {
+    if (error || currentStageId === 5) return;
+    const timer = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [error, currentStageId]);
+
+  const formatElapsed = (totalSecs) => {
+    const mins = Math.floor(totalSecs / 60);
+    const secs = totalSecs % 60;
+    return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+  };
 
   useEffect(() => {
     if (executionRef.current) return;
@@ -25,15 +65,15 @@ function Processing({ setActivePage, pendingFile, setPendingFile, currentDocumen
 
     async function runPipeline() {
       setError(null);
+      setElapsedSeconds(0);
 
       try {
         let docToAnalyze = currentDocument;
 
-        // Stage 1: Upload document if we have a pendingFile
+        // Stage 1: Upload and validate PDF
         if (pendingFile) {
-          setCurrentStep(0);
-          setProgress(25);
-          setStatusText(`Uploading ${pendingFile.name}...`);
+          setCurrentStageId(1);
+          setStatusMessage(`Uploading and validating ${pendingFile.name}...`);
 
           const uploadedDoc = await uploadDocument(pendingFile);
           docToAnalyze = uploadedDoc;
@@ -44,49 +84,46 @@ function Processing({ setActivePage, pendingFile, setPendingFile, currentDocumen
         }
 
         if (!docToAnalyze || !docToAnalyze.id) {
-          throw new Error("No document is selected for processing. Please upload a PDF first.");
+          throw new Error("No document is selected for analysis. Please upload a regulatory PDF first.");
         }
 
-        // Stage 2 & 3: Trigger real AI Analysis endpoint
-        setCurrentStep(1);
-        setProgress(45);
-        setStatusText("Extracting document text and page indices...");
-
+        // Stage 2: Text extraction confirmed
+        setCurrentStageId(2);
+        setStatusMessage("Extracting text and indexing regulatory sections with PyMuPDF...");
         await new Promise((r) => setTimeout(r, 400));
 
-        setCurrentStep(2);
-        setProgress(70);
-        setStatusText("Running Google Gemini compliance analysis...");
+        // Stage 3: Deep AI Reasoning with Primary Provider
+        setCurrentStageId(3);
+        setStatusMessage("AI analyzing regulatory requirements with Google Gemini...");
 
+        // Trigger real server-side analysis
         const analysisResult = await analyzeDocument(docToAnalyze.id);
 
-        setCurrentStep(3);
-        setProgress(90);
-        setStatusText("Structuring obligations, evidence, and deadlines...");
+        // Stage 4: Structure & Schema Validation
+        setCurrentStageId(4);
+        setStatusMessage("Structuring obligations, validating Pydantic schemas, and persisting to database...");
 
         const obligationsFound = analysisResult.obligations ? analysisResult.obligations.length : 0;
         setExtractedCount(obligationsFound);
 
-        // Update current document metadata
         if (analysisResult.document) {
           setCurrentDocument(analysisResult.document);
         }
 
         await new Promise((r) => setTimeout(r, 400));
 
-        // Stage 4: Completed
-        setCurrentStep(4);
-        setProgress(100);
-        setStatusText(`Extracted ${obligationsFound} obligations successfully! Redirecting...`);
+        // Stage 5: Complete
+        setCurrentStageId(5);
+        setStatusMessage(`Successfully extracted and persisted ${obligationsFound} obligations!`);
 
         setTimeout(() => {
           setActivePage("Obligations");
-        }, 1000);
+        }, 1200);
 
       } catch (err) {
         console.error("Processing pipeline failed:", err);
         setError(err.message || "An unexpected error occurred during document processing.");
-        setStatusText("Analysis halted due to an error.");
+        setStatusMessage("Analysis halted due to an error.");
       }
     }
 
@@ -96,8 +133,7 @@ function Processing({ setActivePage, pendingFile, setPendingFile, currentDocumen
   const handleRetry = () => {
     executionRef.current = false;
     setError(null);
-    setProgress(10);
-    setCurrentStep(0);
+    setCurrentStageId(1);
     setActivePage("Upload");
   };
 
@@ -105,12 +141,12 @@ function Processing({ setActivePage, pendingFile, setPendingFile, currentDocumen
     <main className="processing-page">
       <div className="processing-container">
         <div className="processing-header">
-          <span className="ai-badge">✦ AI COMPLIANCE ENGINE</span>
-          <h1>{error ? "Processing Issue Encountered" : "Analyzing Your Regulatory Document"}</h1>
+          <span className="ai-badge">✦ REGULENS AI COMPLIANCE ENGINE</span>
+          <h1>{error ? "Processing Issue Encountered" : "Analyzing Regulatory Document"}</h1>
           <p>
             {error
               ? "The compliance extraction pipeline could not complete the operation."
-              : "Our automated intelligence engine is extracting obligations, responsible units, deadlines, and required evidence."
+              : "ReguLens is extracting regulatory obligations, responsible units, deadlines, and required evidence."
             }
           </p>
         </div>
@@ -150,50 +186,92 @@ function Processing({ setActivePage, pendingFile, setPendingFile, currentDocumen
           </div>
         ) : (
           <>
-            <div className="progress-card">
-              <div className="progress-top">
-                <span>{statusText}</span>
-                <strong>{progress}%</strong>
+            {/* ACTIVE STATUS & TIMER CARD */}
+            <div style={{
+              background: "linear-gradient(135deg, rgba(229, 166, 9, 0.08) 0%, rgba(11, 16, 22, 0.8) 100%)",
+              border: "1px solid rgba(229, 166, 9, 0.25)",
+              borderRadius: "12px",
+              padding: "20px 24px",
+              marginBottom: "28px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: "16px",
+              flexWrap: "wrap",
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+                <div style={{
+                  width: "36px",
+                  height: "36px",
+                  borderRadius: "50%",
+                  background: "rgba(229, 166, 9, 0.15)",
+                  border: "2px solid #e5a609",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  animation: currentStageId < 5 ? "spin 2s linear infinite" : "none",
+                  fontSize: "16px",
+                }}>
+                  {currentStageId === 5 ? "✓" : "⚡"}
+                </div>
+                <div>
+                  <div style={{ color: "#f8fafc", fontWeight: 600, fontSize: "15px", marginBottom: "4px" }}>
+                    {statusMessage}
+                  </div>
+                  <div style={{ color: "#94a3b8", fontSize: "13px" }}>
+                    Stage {currentStageId} of 5 · Multi-Layer Regulatory Intelligence
+                  </div>
+                </div>
               </div>
 
-              <div className="progress-track">
-                <div
-                  className="progress-fill"
-                  style={{ width: `${progress}%`, transition: "width 0.4s ease-in-out" }}
-                />
+              <div style={{
+                background: "rgba(0, 0, 0, 0.4)",
+                padding: "8px 14px",
+                borderRadius: "8px",
+                border: "1px solid rgba(255, 255, 255, 0.08)",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                fontFamily: "monospace",
+                color: "#e5a609",
+                fontSize: "14px",
+              }}>
+                <span>⏱</span>
+                <span>{formatElapsed(elapsedSeconds)}</span>
               </div>
             </div>
 
+            {/* MEANINGFUL STAGES STEPPER */}
             <div className="processing-steps">
-              {STEPS.map((step) => {
-                const isCompleted = step.id < currentStep || (step.id === 4 && progress === 100);
-                const isActive = step.id === currentStep && progress < 100;
+              {STAGES.map((stage) => {
+                const isCompleted = stage.id < currentStageId || (stage.id === 5 && currentStageId === 5);
+                const isActive = stage.id === currentStageId && currentStageId < 5;
 
                 return (
                   <div
                     className={`processing-step ${
                       isCompleted ? "completed" : isActive ? "active" : ""
                     }`}
-                    key={step.id}
+                    key={stage.id}
                   >
                     <div className="step-icon">
                       {isCompleted ? "✓" : isActive ? "◌" : "·"}
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column" }}>
-                      <span>{step.label}</span>
-                      <small style={{ opacity: 0.7, fontSize: "12px" }}>{step.detail}</small>
+                      <span style={{ fontWeight: isActive ? 600 : 500 }}>{stage.title}</span>
+                      <small style={{ opacity: 0.75, fontSize: "12px", marginTop: "2px" }}>{stage.detail}</small>
                     </div>
 
                     {isCompleted && (
-                      <small style={{ marginLeft: "auto", color: "var(--success-color, #10b981)" }}>
+                      <small style={{ marginLeft: "auto", color: "var(--success-color, #10b981)", fontWeight: 600 }}>
                         Completed
                       </small>
                     )}
 
                     {isActive && (
-                      <small style={{ marginLeft: "auto", color: "var(--primary-color, #6366f1)" }}>
-                        Processing...
+                      <small style={{ marginLeft: "auto", color: "var(--primary-color, #e5a609)", fontWeight: 600 }}>
+                        In Progress...
                       </small>
                     )}
                   </div>
