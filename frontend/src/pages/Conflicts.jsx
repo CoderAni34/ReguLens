@@ -292,32 +292,14 @@ function Conflicts() {
 
             {/* FULL SOURCE TRACEABILITY BOXES */}
             <div style={{ marginTop: "16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
-              <div style={{
-                background: "rgba(0, 0, 0, 0.3)",
-                borderLeft: "3px solid #f59e0b",
-                padding: "10px 12px",
-                borderRadius: "4px",
-              }}>
-                <span style={{ fontSize: "11px", color: "#94a3b8", display: "block", marginBottom: "4px" }}>
-                  Source A (Doc #{selectedConflict.document_a_id}, Page {selectedConflict.page_a || 1}):
-                </span>
-                <p style={{ fontStyle: "italic", fontSize: "12px", color: "#cbd5e1", margin: 0 }}>
-                  "{selectedConflict.source_text_a || "No direct quote recorded"}"
-                </p>
+              <div className="conflict-trace-box" style={{ borderLeft: "3px solid #f59e0b" }}>
+                <span>Source A (Doc #{selectedConflict.document_a_id}, Page {selectedConflict.page_a || 1}):</span>
+                <p>"{selectedConflict.source_text_a || "No direct quote recorded"}"</p>
               </div>
 
-              <div style={{
-                background: "rgba(0, 0, 0, 0.3)",
-                borderLeft: "3px solid #ef4444",
-                padding: "10px 12px",
-                borderRadius: "4px",
-              }}>
-                <span style={{ fontSize: "11px", color: "#94a3b8", display: "block", marginBottom: "4px" }}>
-                  Source B (Doc #{selectedConflict.document_b_id}, Page {selectedConflict.page_b || 1}):
-                </span>
-                <p style={{ fontStyle: "italic", fontSize: "12px", color: "#cbd5e1", margin: 0 }}>
-                  "{selectedConflict.source_text_b || "No direct quote recorded"}"
-                </p>
+              <div className="conflict-trace-box" style={{ borderLeft: "3px solid #ef4444" }}>
+                <span>Source B (Doc #{selectedConflict.document_b_id}, Page {selectedConflict.page_b || 1}):</span>
+                <p>"{selectedConflict.source_text_b || "No direct quote recorded"}"</p>
               </div>
             </div>
 

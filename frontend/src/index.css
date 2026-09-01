@@ -5219,6 +5219,12 @@ textarea {
   background: rgba(15, 23, 42, 0.5) !important;
 }
 
+/* MODALS & OVERLAYS */
+[data-theme="light"] .modal-overlay,
+[data-theme="light"] .document-modal-overlay {
+  background: rgba(15, 23, 42, 0.5) !important;
+}
+
 [data-theme="light"] .modal,
 [data-theme="light"] .obligation-modal,
 [data-theme="light"] .document-modal,
@@ -5226,37 +5232,69 @@ textarea {
 [data-theme="light"] .conflict-modal,
 [data-theme="light"] .evidence-modal,
 [data-theme="light"] .report-modal,
-[data-theme="light"] .upload-modal {
+[data-theme="light"] .upload-modal,
+[data-theme="light"] .add-obligation-modal,
+[data-theme="light"] .create-report-modal,
+[data-theme="light"] .add-task-modal {
   background: #ffffff !important;
   border: 1px solid #e2e8f0 !important;
   color: #0f172a !important;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1) !important;
 }
 
-[data-theme="light"] .modal h2,
-[data-theme="light"] .modal h3,
-[data-theme="light"] .document-modal h2,
-[data-theme="light"] .obligation-modal h2 {
-  color: #0f172a !important;
-}
-
-[data-theme="light"] .modal-description,
-[data-theme="light"] .modal-body {
-  color: #475569 !important;
-}
-
-[data-theme="light"] .modal-grid div,
-[data-theme="light"] .modal-detail {
+[data-theme="light"] .modal-header {
   border-bottom: 1px solid #f1f5f9 !important;
 }
 
+[data-theme="light"] .modal-header h2,
+[data-theme="light"] .modal h2,
+[data-theme="light"] .modal h3,
+[data-theme="light"] .document-modal h2,
+[data-theme="light"] .obligation-modal h2,
+[data-theme="light"] .task-modal h2,
+[data-theme="light"] .conflict-modal h2,
+[data-theme="light"] .evidence-modal h2,
+[data-theme="light"] .report-modal h2 {
+  color: #0f172a !important;
+}
+
+[data-theme="light"] .modal-label,
+[data-theme="light"] .modal-description,
+[data-theme="light"] .modal-body {
+  color: #64748b !important;
+}
+
+[data-theme="light"] .modal-description code {
+  background: #f1f5f9 !important;
+  color: #4338ca !important;
+  border: 1px solid #cbd5e1 !important;
+}
+
+/* ALL INTERNAL INFORMATION / DETAIL CARDS IN MODALS */
+[data-theme="light"] .modal-grid div,
+[data-theme="light"] .modal-grid > div,
+[data-theme="light"] .modal-detail,
+[data-theme="light"] .detail-card,
+[data-theme="light"] .info-item,
+[data-theme="light"] .summary-box,
+[data-theme="light"] .obligations-box {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  border-radius: 8px !important;
+  color: #0f172a !important;
+}
+
 [data-theme="light"] .modal-grid span,
-[data-theme="light"] .modal-detail span {
+[data-theme="light"] .modal-detail span,
+[data-theme="light"] .info-item span,
+[data-theme="light"] .detail-card span {
   color: #64748b !important;
 }
 
 [data-theme="light"] .modal-grid strong,
-[data-theme="light"] .modal-detail strong {
+[data-theme="light"] .modal-detail strong,
+[data-theme="light"] .info-item strong,
+[data-theme="light"] .detail-card strong {
   color: #0f172a !important;
 }
 
@@ -5271,7 +5309,41 @@ textarea {
 
 [data-theme="light"] .close-modal:hover,
 [data-theme="light"] .modal-close:hover {
+  background: #f1f5f9 !important;
   color: #0f172a !important;
+}
+
+[data-theme="light"] .source-quote-box,
+[data-theme="light"] .conflict-trace-box,
+[data-theme="light"] .executive-summary-box,
+[data-theme="light"] .report-metrics-box {
+  background: #f8fafc !important;
+  border: 1px solid #e2e8f0 !important;
+  color: #1e293b !important;
+}
+
+[data-theme="light"] .source-quote-box span,
+[data-theme="light"] .conflict-trace-box span,
+[data-theme="light"] .report-metrics-box span {
+  color: #64748b !important;
+}
+
+[data-theme="light"] .source-quote-box p,
+[data-theme="light"] .conflict-trace-box p,
+[data-theme="light"] .report-metrics-box div {
+  color: #1e293b !important;
+}
+
+[data-theme="light"] .modal-status-btn {
+  border: 1px solid #cbd5e1 !important;
+  background: #ffffff !important;
+  color: #475569 !important;
+}
+
+[data-theme="light"] .modal-status-btn.active {
+  background: #4338ca !important;
+  color: #ffffff !important;
+  border-color: #4338ca !important;
 }
 
 /* TABLES & DATA GRIDS */

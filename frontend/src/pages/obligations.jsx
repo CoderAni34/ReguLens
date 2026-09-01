@@ -507,42 +507,21 @@ function Obligations({ currentDocument, setCurrentDocument, setActivePage }) {
 
             {/* Source Reference Quote */}
             {selectedObligation.source_text && (
-              <div style={{
-                marginTop: "16px",
-                padding: "12px",
-                background: "rgba(0, 0, 0, 0.25)",
-                borderLeft: "3px solid var(--primary-color, #6366f1)",
-                borderRadius: "4px",
-              }}>
-                <span style={{ fontSize: "11px", textTransform: "uppercase", color: "#94a3b8", display: "block", marginBottom: "4px" }}>
-                  Exact Document Source Quote:
-                </span>
-                <p style={{ fontStyle: "italic", fontSize: "13px", color: "#cbd5e1", margin: 0 }}>
-                  "{selectedObligation.source_text}"
-                </p>
+              <div className="source-quote-box">
+                <span>Exact Document Source Quote:</span>
+                <p>"{selectedObligation.source_text}"</p>
               </div>
             )}
 
             {/* Status Change Selector */}
             <div style={{ marginTop: "20px", display: "flex", alignItems: "center", gap: "12px" }}>
-              <span style={{ fontSize: "13px", color: "#94a3b8" }}>Update Status:</span>
+              <span className="modal-label" style={{ fontSize: "13px", marginBottom: 0 }}>Update Status:</span>
               {["Pending", "In Progress", "Completed"].map((status) => (
                 <button
                   key={status}
                   disabled={updatingId === selectedObligation.id}
                   onClick={() => handleStatusUpdate(selectedObligation.id, status)}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: "6px",
-                    border: "1px solid rgba(255, 255, 255, 0.15)",
-                    background:
-                      (selectedObligation.status || "Pending") === status
-                        ? "var(--primary-color, #6366f1)"
-                        : "transparent",
-                    color: "#f8fafc",
-                    fontSize: "12px",
-                    cursor: "pointer",
-                  }}
+                  className={(selectedObligation.status || "Pending") === status ? "modal-status-btn active" : "modal-status-btn"}
                 >
                   {status}
                 </button>

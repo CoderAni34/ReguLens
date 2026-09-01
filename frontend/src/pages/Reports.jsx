@@ -334,17 +334,11 @@ function Reports() {
               const metrics = parseMetrics(selectedReport.metrics_json);
               if (!metrics) return null;
               return (
-                <div style={{
-                  marginTop: "16px",
-                  background: "rgba(0, 0, 0, 0.25)",
-                  padding: "12px 16px",
-                  borderRadius: "6px",
-                  fontSize: "12px",
-                }}>
-                  <span style={{ textTransform: "uppercase", color: "#94a3b8", fontWeight: 600, display: "block", marginBottom: "8px" }}>
+                <div className="report-metrics-box">
+                  <span style={{ textTransform: "uppercase", fontWeight: 600, display: "block", marginBottom: "8px" }}>
                     Factual Metrics Snapshot:
                   </span>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px", color: "#cbd5e1" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "10px" }}>
                     <div>📄 Docs: <strong>{metrics.documents?.total_ingested || 0}</strong></div>
                     <div>📋 Obligations: <strong>{metrics.obligations?.total_extracted || 0}</strong></div>
                     <div>☑️ Tasks Completed: <strong>{metrics.tasks?.completed || 0} / {metrics.tasks?.total || 0}</strong></div>

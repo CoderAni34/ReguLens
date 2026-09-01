@@ -324,24 +324,13 @@ function Tasks() {
 
             {/* Quick Status Update */}
             <div style={{ marginTop: "20px", display: "flex", alignItems: "center", gap: "12px" }}>
-              <span style={{ fontSize: "13px", color: "#94a3b8" }}>Update Status:</span>
+              <span className="modal-label" style={{ fontSize: "13px", marginBottom: 0 }}>Update Status:</span>
               {["To Do", "In Progress", "Completed"].map((st) => (
                 <button
                   key={st}
                   disabled={updatingId === selectedTask.id}
                   onClick={() => handleStatusChange(selectedTask.id, st)}
-                  style={{
-                    padding: "6px 14px",
-                    borderRadius: "6px",
-                    border: "1px solid rgba(255, 255, 255, 0.15)",
-                    background:
-                      (selectedTask.status || "To Do") === st
-                        ? "var(--primary-color, #6366f1)"
-                        : "transparent",
-                    color: "#f8fafc",
-                    fontSize: "12px",
-                    cursor: "pointer",
-                  }}
+                  className={(selectedTask.status || "To Do") === st ? "modal-status-btn active" : "modal-status-btn"}
                 >
                   {st}
                 </button>
