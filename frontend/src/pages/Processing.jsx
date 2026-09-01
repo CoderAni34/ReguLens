@@ -4,7 +4,7 @@ import { uploadDocument, analyzeDocument } from "../services/api";
 const STEPS = [
   { id: 0, label: "Uploading document to server", detail: "Transferring PDF payload to secure storage" },
   { id: 1, label: "Parsing document structure", detail: "Extracting regulatory text and page metadata" },
-  { id: 2, label: "AI analyzing compliance obligations", detail: "Querying Gemini model for regulatory requirements" },
+  { id: 2, label: "AI analyzing compliance obligations", detail: "Extracting regulatory requirements and obligations" },
   { id: 3, label: "Evaluating deadlines & evidence", detail: "Structuring categories, priorities, and confidence scores" },
   { id: 4, label: "Analysis complete", detail: "Compliance records synchronized successfully" },
 ];
@@ -56,7 +56,7 @@ function Processing({ setActivePage, pendingFile, setPendingFile, currentDocumen
 
         setCurrentStep(2);
         setProgress(70);
-        setStatusText("Running Google Gemini compliance analysis...");
+        setStatusText("Running AI compliance analysis...");
 
         const analysisResult = await analyzeDocument(docToAnalyze.id);
 

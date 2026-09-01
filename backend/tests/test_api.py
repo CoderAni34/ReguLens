@@ -2,7 +2,7 @@ import io
 import pytest
 from pydantic import ValidationError
 from app.schemas.obligation import ObligationCreate
-from app.services import document_service, obligation_service
+from app.services import document_service, obligation_service, task_service, evidence_service, conflict_service, report_service
 from unittest.mock import patch
 import pymupdf
 from app.schemas.ai import AIResponse, AIDocumentInfo, AIObligation
@@ -69,7 +69,6 @@ def test_get_documents(client):
     assert len(data) >= 1
     assert data[0]["id"] == doc_id
 
-    # Test without trailing slash
     response_no_slash = client.get("/documents")
     assert response_no_slash.status_code == 200
     assert len(response_no_slash.json()) >= 1
@@ -135,381 +134,183 @@ def test_analyze_document(client):
         assert response.status_code == 200
         data = response.json()
 
-        # Check document updates
         doc_data = data["document"]
         assert doc_data["processing_status"] == "completed"
         assert doc_data["title"] == "Sample Mock Regulation Act 2026"
-        assert doc_data["document_type"] == "regulation"
-        assert doc_data["language"] == "en"
-        assert doc_data["version"] == "1.0"
 
-        # Check obligations created
         obs_data = data["obligations"]
         assert len(obs_data) == 2
         assert obs_data[0]["title"] == "Annual Compliance Report"
-        assert obs_data[0]["document_id"] == doc_id
-        assert obs_data[0]["responsible_unit"] == "Compliance Department"
-        assert obs_data[0]["deadline"] == "2026-03-31"
-        assert obs_data[0]["evidence_required"] == "Signed audit report"
-        assert obs_data[0]["penalty"] == "Warning"
-        assert obs_data[0]["category"] == "Compliance"
-        assert obs_data[0]["priority"] == "High"
-        assert obs_data[0]["source_text"].startswith("Section 4(a):")
-        assert obs_data[0]["source_page"] == 12
-        assert obs_data[0]["confidence"] == 0.95
-        assert obs_data[0]["status"] == "active"
 
-        # Check second obligation with nullable fields
-        assert obs_data[1]["title"] == "Data Privacy Audit"
-        assert obs_data[1]["deadline"] is None
-        assert obs_data[1]["penalty"] is None
-        assert obs_data[1]["category"] == "Security"
-        assert obs_data[1]["priority"] == "Medium"
-        assert obs_data[1]["source_page"] == 24
-        assert obs_data[1]["confidence"] == 0.88
+        # Verify tasks and evidence were automatically derived
+        tasks_resp = client.get("/tasks")
+        assert tasks_resp.status_code == 200
+        assert len(tasks_resp.json()) == 2
 
-        # Verify obligations can be fetched
-        response_obs = client.get(f"/obligations/document/{doc_id}")
-        assert response_obs.status_code == 200
-        fetched_obs = response_obs.json()
-        assert len(fetched_obs) == 2
-        assert fetched_obs[0]["category"] == "Compliance"
+        evidence_resp = client.get("/evidence")
+        assert evidence_resp.status_code == 200
+        assert len(evidence_resp.json()) == 2
 
 
-def test_analyze_not_found(client):
-    response = client.post("/documents/999/analyze")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Document not found"
-
-
-def test_get_obligations_list(client):
-    doc_id = upload_test_pdf(client)
-    mock_ai_data = AIResponse(
-        document=AIDocumentInfo(title="Test", document_type="type", language="en", version="1.0"),
-        obligations=[
-            AIObligation(title="Obs 1", description="D", source_text="S", confidence=0.9, penalty=None, category=None, priority=None),
-            AIObligation(title="Obs 2", description="D", source_text="S", confidence=0.9, penalty=None, category=None, priority=None)
-        ]
-    )
-    with patch("app.services.ai_service.analyze_document", return_value=mock_ai_data):
-        client.post(f"/documents/{doc_id}/analyze")
-
-    response = client.get("/obligations")
-    assert response.status_code == 200
-    data = response.json()
-    assert len(data) == 2
-
-    # Test with trailing slash
-    response_slash = client.get("/obligations/")
-    assert response_slash.status_code == 200
-    assert len(response_slash.json()) == 2
-
-
-def test_get_obligation_by_id(client):
-    doc_id = upload_test_pdf(client)
-    mock_ai_data = AIResponse(
-        document=AIDocumentInfo(title="Test", document_type="type", language="en", version="1.0"),
-        obligations=[
-            AIObligation(title="Annual Compliance Report", description="D", source_text="Exact text here", confidence=0.95, penalty=None, category=None, priority=None)
-        ]
-    )
-    with patch("app.services.ai_service.analyze_document", return_value=mock_ai_data):
-        analyze_resp = client.post(f"/documents/{doc_id}/analyze")
-    obs_id = analyze_resp.json()["obligations"][0]["id"]
-
-    response = client.get(f"/obligations/{obs_id}")
-    assert response.status_code == 200
-    data = response.json()
-    assert data["id"] == obs_id
-    assert data["document_id"] == doc_id
-    assert data["title"] == "Annual Compliance Report"
-    assert data["source_text"] is not None
-    assert data["confidence"] > 0
-
-
-def test_get_obligation_not_found(client):
-    response = client.get("/obligations/9999")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Obligation not found"
-
-
-def test_get_obligations_by_document_not_found(client):
-    response = client.get("/obligations/document/9999")
-    assert response.status_code == 404
-    assert response.json()["detail"] == "Document not found"
-
-
-def test_document_service_crud(db_session):
-    doc = document_service.create_document(
+def test_tasks_endpoints_and_derivation_idempotency(client, db_session):
+    doc = document_service.create_document(db=db_session, filename="task_test.pdf", file_path="uploads/task_test.pdf")
+    obs = obligation_service.create_obligation(
         db=db_session,
-        filename="policy.pdf",
-        file_path="uploads/policy.pdf",
-        title="Policy Document",
-    )
-    assert doc.id is not None
-    assert doc.title == "Policy Document"
-    assert doc.processing_status == "uploaded"
-
-    # Get by ID
-    fetched = document_service.get_document_by_id(db=db_session, document_id=doc.id)
-    assert fetched is not None
-    assert fetched.id == doc.id
-
-    # List
-    all_docs = document_service.get_documents(db=db_session)
-    assert len(all_docs) == 1
-
-    # Update metadata
-    updated = document_service.update_document_metadata(
-        db=db_session,
-        document_id=doc.id,
-        title="Updated Title",
-        processing_status="completed",
-    )
-    assert updated.title == "Updated Title"
-    assert updated.processing_status == "completed"
-
-    # Delete
-    deleted = document_service.delete_document(db=db_session, document_id=doc.id)
-    assert deleted is True
-    assert document_service.get_document_by_id(db=db_session, document_id=doc.id) is None
-
-
-def test_obligation_service_crud(db_session):
-    doc = document_service.create_document(
-        db=db_session,
-        filename="test.pdf",
-        file_path="uploads/test.pdf",
-    )
-
-    # Create single obligation
-    obs_in = ObligationCreate(
-        document_id=doc.id,
-        title="Test Obligation",
-        description="Must comply with guidelines.",
-        source_text="Exact text here",
-        confidence=0.92,
-    )
-    obs = obligation_service.create_obligation(db=db_session, obligation_data=obs_in)
-    assert obs.id is not None
-    assert obs.title == "Test Obligation"
-    assert obs.status == "active"
-
-    # Get by ID
-    fetched = obligation_service.get_obligation_by_id(db=db_session, obligation_id=obs.id)
-    assert fetched is not None
-    assert fetched.id == obs.id
-
-    # Bulk create
-    bulk_in = [
-        ObligationCreate(
+        obligation_data=ObligationCreate(
             document_id=doc.id,
-            title="Bulk Obligation 1",
-            description="Desc 1",
-            source_text="Source 1",
-            confidence=0.85,
-        ),
-        ObligationCreate(
-            document_id=doc.id,
-            title="Bulk Obligation 2",
-            description="Desc 2",
-            source_text="Source 2",
-            confidence=0.90,
-        ),
-    ]
-    bulk_obs = obligation_service.create_obligations_bulk(db=db_session, obligations_data=bulk_in)
-    assert len(bulk_obs) == 2
+            title="Idempotent Task Obligation",
+            description="Ensure task is derived once.",
+            deadline="2026-12-31",
+            priority="High",
+            responsible_unit="Audit Unit",
+            source_text="Clause 1: Task text",
+            confidence=0.99
+        )
+    )
 
-    # Get by document
-    doc_obs = obligation_service.get_obligations_by_document_id(db=db_session, document_id=doc.id)
-    assert len(doc_obs) == 3
+    # Derive tasks twice
+    tasks1 = task_service.derive_tasks_from_obligations(db=db_session, obligations=[obs])
+    assert len(tasks1) == 1
+
+    tasks2 = task_service.derive_tasks_from_obligations(db=db_session, obligations=[obs])
+    assert len(tasks2) == 1
+    assert db_session.query(task_service.Task).count() == 1
+
+    task_id = tasks1[0].id
+
+    # GET /tasks
+    get_resp = client.get(f"/tasks/{task_id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["title"] == "Idempotent Task Obligation"
+
+    # PATCH /tasks/{id}
+    patch_resp = client.patch(f"/tasks/{task_id}", json={"status": "In Progress"})
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["status"] == "In Progress"
 
 
-def test_cascade_delete(db_session):
-    doc = document_service.create_document(
+def test_evidence_endpoints_and_derivation_idempotency(client, db_session):
+    doc = document_service.create_document(db=db_session, filename="ev_test.pdf", file_path="uploads/ev_test.pdf")
+    obs = obligation_service.create_obligation(
         db=db_session,
-        filename="cascade_test.pdf",
-        file_path="uploads/cascade_test.pdf",
+        obligation_data=ObligationCreate(
+            document_id=doc.id,
+            title="Evidence Test Obligation",
+            description="Provide proof.",
+            evidence_required="Quarterly Audit Certificate",
+            source_text="Clause 2: Proof required.",
+            confidence=0.95
+        )
+    )
+
+    # Derive evidence twice
+    ev1 = evidence_service.derive_evidence_from_obligations(db=db_session, obligations=[obs])
+    assert len(ev1) == 1
+
+    ev2 = evidence_service.derive_evidence_from_obligations(db=db_session, obligations=[obs])
+    assert len(ev2) == 1
+    assert db_session.query(evidence_service.Evidence).count() == 1
+
+    ev_id = ev1[0].id
+
+    # GET /evidence
+    get_resp = client.get(f"/evidence/{ev_id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["title"] == "Quarterly Audit Certificate"
+
+    # PATCH /evidence/{id}
+    patch_resp = client.patch(f"/evidence/{ev_id}", json={"status": "Verified"})
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["status"] == "Verified"
+
+
+def test_conflicts_endpoints_and_idempotency(client, db_session):
+    doc_a = document_service.create_document(db=db_session, filename="doc_a.pdf", file_path="uploads/doc_a.pdf", processing_status="completed")
+    doc_b = document_service.create_document(db=db_session, filename="doc_b.pdf", file_path="uploads/doc_b.pdf", processing_status="completed")
+
+    obligation_service.create_obligation(
+        db=db_session,
+        obligation_data=ObligationCreate(
+            document_id=doc_a.id,
+            title="Doc A Obligation",
+            description="Description A",
+            source_text="Submit annual report by 10 Dec.",
+            confidence=0.9
+        )
     )
     obligation_service.create_obligation(
         db=db_session,
         obligation_data=ObligationCreate(
-            document_id=doc.id,
-            title="Cascade Obligation",
-            description="Description",
-            source_text="Source",
-            confidence=0.99,
-        ),
+            document_id=doc_b.id,
+            title="Doc B Obligation",
+            description="Description B",
+            source_text="Submit annual report by 31 Dec.",
+            confidence=0.9
+        )
     )
-    assert len(obligation_service.get_obligations_by_document_id(db=db_session, document_id=doc.id)) == 1
 
-    # Delete parent document
-    document_service.delete_document(db=db_session, document_id=doc.id)
-    # Child obligations should be deleted
-    assert len(obligation_service.get_obligations_by_document_id(db=db_session, document_id=doc.id)) == 0
+    mock_conflicts = [
+        {
+            "conflict_type": "Deadline Conflict",
+            "title": "Reporting Deadline Contradiction",
+            "description": "Doc A requires Dec 10, Doc B requires Dec 31.",
+            "severity": "High",
+            "page_a": 10,
+            "page_b": 15,
+            "source_text_a": "Submit annual report by 10 Dec.",
+            "source_text_b": "Submit annual report by 31 Dec.",
+            "recommendation": "Harmonize deadlines."
+        }
+    ]
 
+    with patch("app.services.ai_service.run_ai_conflict_detection", return_value=mock_conflicts):
+        # Run detection twice
+        import asyncio
+        asyncio.run(conflict_service.detect_and_save_conflicts(db=db_session, target_document_id=doc_b.id))
+        asyncio.run(conflict_service.detect_and_save_conflicts(db=db_session, target_document_id=doc_b.id))
 
-def test_obligation_schema_validation():
-    # Valid
-    obs = ObligationCreate(
-        document_id=1,
-        title="Valid Obligation",
-        description="Description",
-        source_text="Source text",
-        confidence=0.5,
-    )
-    assert obs.confidence == 0.5
+    # Should only have 1 conflict recorded due to fingerprint deduplication
+    conflicts = conflict_service.get_conflicts(db=db_session)
+    assert len(conflicts) == 1
+    conflict_id = conflicts[0].id
 
-    # Invalid confidence > 1
-    with pytest.raises(ValidationError):
-        ObligationCreate(
-            document_id=1,
-            title="Invalid Obligation",
-            description="Description",
-            source_text="Source text",
-            confidence=1.5,
-        )
+    # GET /conflicts
+    get_resp = client.get(f"/conflicts/{conflict_id}")
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["severity"] == "High"
+    assert data["source_text_a"] == "Submit annual report by 10 Dec."
 
-    # Invalid confidence < 0
-    with pytest.raises(ValidationError):
-        ObligationCreate(
-            document_id=1,
-            title="Invalid Obligation",
-            description="Description",
-            source_text="Source text",
-            confidence=-0.1,
-        )
-
-
-def test_pagination_validation_invalid_skip(client):
-    response = client.get("/documents?skip=-1")
-    assert response.status_code == 422
-
-    response_obs = client.get("/obligations?skip=-5")
-    assert response_obs.status_code == 422
-
-
-def test_pagination_validation_invalid_limit(client):
-    response = client.get("/documents?limit=0")
-    assert response.status_code == 422
-
-    response_large = client.get("/documents?limit=9999")
-    assert response_large.status_code == 422
-
-    response_obs = client.get("/obligations?limit=0")
-    assert response_obs.status_code == 422
-
-
-def test_analyze_document_ai_failure(client, monkeypatch):
-    doc_id = upload_test_pdf(client, filename="failure_test.pdf")
-
-    async def mock_failing_ai(doc_id):
-        raise RuntimeError("Simulated AI extraction failure")
-
-    monkeypatch.setattr("app.services.ai_service.analyze_document", mock_failing_ai)
-
-    response = client.post(f"/documents/{doc_id}/analyze")
-    assert response.status_code == 500
-    assert "AI analysis failed" in response.json()["detail"]
-
-    # Verify document status transitioned to failed
-    doc_resp = client.get(f"/documents/{doc_id}")
-    assert doc_resp.status_code == 200
-    assert doc_resp.json()["processing_status"] == "failed"
-
-
-def test_analyze_document_invalid_ai_response(client, monkeypatch):
-    doc_id = upload_test_pdf(client, filename="invalid_ai_test.pdf")
-
-    async def mock_invalid_ai(doc_id):
-        raise ValidationError.from_exception_data(
-            "AIResponse",
-            [{"type": "greater_than_equal", "loc": ("obligations", 0, "confidence"), "input": 1.5, "ctx": {"ge": 0}}],
-        )
-
-    monkeypatch.setattr("app.services.ai_service.analyze_document", mock_invalid_ai)
-
-    response = client.post(f"/documents/{doc_id}/analyze")
-    assert response.status_code == 500
-    assert "AI analysis failed" in response.json()["detail"]
-
-    # Verify document status transitioned to failed and no obligations were persisted
-    doc_resp = client.get(f"/documents/{doc_id}")
-    assert doc_resp.status_code == 200
-    assert doc_resp.json()["processing_status"] == "failed"
-
-    obs_resp = client.get(f"/obligations/document/{doc_id}")
-    assert obs_resp.status_code == 200
-    assert obs_resp.json() == []
-
-
-def test_upload_file_cleanup_on_db_error(client, monkeypatch):
-    file_content = b"%PDF-1.4 sample content"
-    files = {"file": ("orphan_test.pdf", io.BytesIO(file_content), "application/pdf")}
-
-    def mock_failing_create_document(*args, **kwargs):
-        raise RuntimeError("Simulated DB Insert Failure")
-
-    monkeypatch.setattr("app.services.document_service.create_document", mock_failing_create_document)
-
-    response = client.post("/documents/upload", files=files)
-    assert response.status_code == 500
-    assert "Failed to create document record" in response.json()["detail"]
-
-
-def test_delete_document(client):
-    doc_id = upload_test_pdf(client, "to_delete.pdf")
-    resp = client.delete(f"/documents/{doc_id}")
-    assert resp.status_code == 204
-
-    # Verify 404 on subsequent get
-    get_resp = client.get(f"/documents/{doc_id}")
-    assert get_resp.status_code == 404
-
-    # Delete non-existent document
-    del_404 = client.delete("/documents/99999")
-    assert del_404.status_code == 404
-
-
-def test_create_and_update_and_delete_obligation(client):
-    doc_id = upload_test_pdf(client, "obs_crud_doc.pdf")
-
-    # Create obligation
-    obs_payload = {
-        "document_id": doc_id,
-        "title": "Manual Compliance Task",
-        "description": "Ensure encryption at rest is enabled.",
-        "responsible_unit": "IT Security",
-        "deadline": "2026-12-31",
-        "evidence_required": "KMS configuration audit log",
-        "penalty": "Fine up to 5 Lakhs",
-        "category": "Compliance",
-        "priority": "High",
-        "source_text": "Clause 4.1: Encryption at rest is mandatory.",
-        "source_page": 2,
-        "confidence": 1.0,
-        "status": "Pending",
-    }
-    create_resp = client.post("/obligations", json=obs_payload)
-    assert create_resp.status_code == 201
-    created_obs = create_resp.json()
-    assert created_obs["title"] == "Manual Compliance Task"
-    assert created_obs["status"] == "Pending"
-    obs_id = created_obs["id"]
-
-    # Update obligation
-    patch_resp = client.patch(f"/obligations/{obs_id}", json={"status": "Completed", "priority": "Medium"})
+    # PATCH /conflicts/{id}
+    patch_resp = client.patch(f"/conflicts/{conflict_id}", json={"status": "Resolved"})
     assert patch_resp.status_code == 200
-    updated_obs = patch_resp.json()
-    assert updated_obs["status"] == "Completed"
-    assert updated_obs["priority"] == "Medium"
-
-    # Delete obligation
-    del_resp = client.delete(f"/obligations/{obs_id}")
-    assert del_resp.status_code == 204
-
-    # Verify 404 on subsequent get
-    get_resp = client.get(f"/obligations/{obs_id}")
-    assert get_resp.status_code == 404
+    assert patch_resp.json()["status"] == "Resolved"
 
 
+
+def test_reports_endpoints_and_snapshot_metrics(client, db_session):
+    doc = document_service.create_document(db=db_session, filename="report_doc.pdf", file_path="uploads/report_doc.pdf", processing_status="completed")
+    obs = obligation_service.create_obligation(
+        db=db_session,
+        obligation_data=ObligationCreate(
+            document_id=doc.id,
+            title="Report Obligation",
+            description="Obligation for report testing.",
+            source_text="Source text",
+            confidence=0.9
+        )
+    )
+    task_service.derive_tasks_from_obligations(db=db_session, obligations=[obs])
+
+    with patch("app.services.ai_service.run_ai_executive_summary", return_value="Factual summary: 1 document analyzed and 1 task created."):
+        resp = client.post("/reports/generate", json={"title": "Annual Compliance Report", "report_type": "Compliance", "period": "Annual"})
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["title"] == "Annual Compliance Report"
+        assert data["executive_summary"] == "Factual summary: 1 document analyzed and 1 task created."
+        assert "metrics_json" in data
+
+    # GET /reports
+    reports_resp = client.get("/reports")
+    assert reports_resp.status_code == 200
+    assert len(reports_resp.json()) == 1

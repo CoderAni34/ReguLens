@@ -1,6 +1,10 @@
 from typing import List, Optional
 from sqlalchemy.orm import Session
 from app.db.models.document import Document
+from app.db.models.obligation import Obligation
+from app.db.models.task import Task
+from app.db.models.evidence import Evidence
+from app.db.models.conflict import Conflict
 
 
 def create_document(
@@ -91,15 +95,32 @@ def update_document_metadata(
 
 
 def delete_document(db: Session, document_id: int) -> bool:
-    """Delete a document and its cascade relations."""
+    """Delete a document and its cascade relations cleanly."""
     document = get_document_by_id(db, document_id)
     if not document:
         return False
     try:
+        # 1. Delete conflicts involving this document (either as doc A or doc B)
+        db.query(Conflict).filter(
+            (Conflict.document_a_id == document_id) | (Conflict.document_b_id == document_id)
+        ).delete(synchronize_session=False)
+
+        # 2. Get obligation IDs belonging exclusively to this document
+        obs_ids = [obs.id for obs in document.obligations]
+
+        if obs_ids:
+            # 3. Delete tasks derived from this document's obligations
+            db.query(Task).filter(Task.obligation_id.in_(obs_ids)).delete(synchronize_session=False)
+
+            # 4. Delete evidence requirements derived from this document's obligations or referencing it
+            db.query(Evidence).filter(
+                (Evidence.obligation_id.in_(obs_ids)) | (Evidence.source_document_id == document_id)
+            ).delete(synchronize_session=False)
+
+        # 5. Delete the document record itself (cascades to child obligations)
         db.delete(document)
         db.commit()
         return True
     except Exception:
         db.rollback()
         raise
-

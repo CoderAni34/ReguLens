@@ -3,23 +3,14 @@ End-to-end Multi-Document Pipeline Test.
 Verifies that Document A and Document B produce distinct extracted obligations,
 properly persisted and retrievable via GET /obligations/document/{id}.
 """
-import io
 import os
 import sys
-import json
 import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi.testclient import TestClient
 from unittest.mock import patch
-
-from app.main import app
-from app.db.database import Base, engine, SessionLocal
-from app.services import document_service, obligation_service
 from app.schemas.ai import AIResponse, AIDocumentInfo, AIObligation
-
-client = TestClient(app)
 
 SAMPLE_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "sample-data", "documents")
 DOC_A_PATH = os.path.join(SAMPLE_DIR, "regulens_security_compliance_policy_2026.pdf")
@@ -283,19 +274,15 @@ DOC_B_EXTRACTED = [
 ]
 
 
-def test_multi_document_end_to_end():
-    # 1. Initialize DB tables
-    Base.metadata.create_all(bind=engine)
-    db = SessionLocal()
-
-    # 2. Upload Document A
+def test_multi_document_end_to_end(client, db_session):
+    # 1. Upload Document A using isolated test client
     with open(DOC_A_PATH, "rb") as f:
         resp_upload_a = client.post("/documents/upload", files={"file": ("regulens_security_compliance_policy_2026.pdf", f, "application/pdf")})
     assert resp_upload_a.status_code == 201
     doc_a_id = resp_upload_a.json()["id"]
     assert doc_a_id is not None
 
-    # 3. Analyze Document A with mock AI extraction matching PDF A text
+    # 2. Analyze Document A with mock AI extraction matching PDF A text
     ai_resp_a = AIResponse(
         document=AIDocumentInfo(
             title="ReguLens Cybersecurity & Regulatory Compliance Framework 2026",
@@ -311,7 +298,7 @@ def test_multi_document_end_to_end():
     assert resp_analyze_a.status_code == 200
     assert len(resp_analyze_a.json()["obligations"]) == 14
 
-    # 4. Fetch obligations for Document A
+    # 3. Fetch obligations for Document A
     resp_obs_a = client.get(f"/obligations/document/{doc_a_id}")
     assert resp_obs_a.status_code == 200
     obs_a_list = resp_obs_a.json()
@@ -321,7 +308,7 @@ def test_multi_document_end_to_end():
     assert any("incident" in t.lower() for t in titles_a)
     assert any("vendor" in t.lower() for t in titles_a)
 
-    # 5. Upload Document B
+    # 4. Upload Document B
     with open(DOC_B_PATH, "rb") as f:
         resp_upload_b = client.post("/documents/upload", files={"file": ("academic_research_ethics_guidelines_2026.pdf", f, "application/pdf")})
     assert resp_upload_b.status_code == 201
@@ -329,7 +316,7 @@ def test_multi_document_end_to_end():
     assert doc_b_id is not None
     assert doc_b_id != doc_a_id
 
-    # 6. Analyze Document B with mock AI extraction matching PDF B text
+    # 5. Analyze Document B with mock AI extraction matching PDF B text
     ai_resp_b = AIResponse(
         document=AIDocumentInfo(
             title="National Council for Academic Integrity & Research Ethics 2026",
@@ -345,7 +332,7 @@ def test_multi_document_end_to_end():
     assert resp_analyze_b.status_code == 200
     assert len(resp_analyze_b.json()["obligations"]) == 5
 
-    # 7. Fetch obligations for Document B
+    # 6. Fetch obligations for Document B
     resp_obs_b = client.get(f"/obligations/document/{doc_b_id}")
     assert resp_obs_b.status_code == 200
     obs_b_list = resp_obs_b.json()
@@ -355,20 +342,11 @@ def test_multi_document_end_to_end():
     assert any("ethics committee" in t.lower() for t in titles_b)
     assert any("conflict of interest" in t.lower() for t in titles_b)
 
-    # 8. CRITICAL VERIFICATION: Document A and Document B obligations MUST be completely distinct!
+    # 7. CRITICAL VERIFICATION: Document A and Document B obligations MUST be completely distinct!
     assert set(titles_a).isdisjoint(set(titles_b)), "Obligations for Document A and Document B must not overlap!"
 
-    # 9. Verify GET /obligations (all) contains both sets
+    # 8. Verify GET /obligations (all) contains both sets
     all_obs_resp = client.get("/obligations")
     assert all_obs_resp.status_code == 200
     all_obs = all_obs_resp.json()
-    assert len(all_obs) >= 19
-
-    print(f"\n[PASS] Multi-Document E2E Test Succeeded!")
-    print(f"Document A (ID #{doc_a_id}): {len(obs_a_list)} obligations extracted (Cybersecurity Framework)")
-    print(f"Document B (ID #{doc_b_id}): {len(obs_b_list)} obligations extracted (Academic Ethics Directive)")
-    print(f"Distinct Obligation Sets Confirmed: Zero intersection between Document A and Document B titles.")
-
-
-if __name__ == "__main__":
-    test_multi_document_end_to_end()
+    assert len(all_obs) == 19

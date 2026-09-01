@@ -14,6 +14,23 @@ import Settings from "./pages/Settings";
 
 function App() {
   const [activePage, setActivePage] = useState("Dashboard");
+  const [theme, setTheme] = useState(() => {
+    try {
+      return localStorage.getItem("regulens_theme") || "dark";
+    } catch {
+      return "dark";
+    }
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem("regulens_theme", theme);
+    } catch (e) {
+      console.error("Failed to persist theme preference", e);
+    }
+  }, [theme]);
+
   const [currentDocument, setCurrentDocumentState] = useState(() => {
     try {
       const saved = sessionStorage.getItem("regulens_current_document");
@@ -110,7 +127,7 @@ function App() {
         )}
 
         {activePage === "Settings" && (
-          <Settings />
+          <Settings theme={theme} setTheme={setTheme} />
         )}
 
         {![

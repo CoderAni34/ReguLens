@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import documents, obligations
+from app.api.routes import documents, obligations, tasks, evidence, conflicts, reports
 from app.core.config import settings
 from app.db.database import engine, Base
 import app.db.models  # ensure models are registered on Base.metadata
@@ -30,12 +30,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    # allow_origins=settings.cors_origins,
-    allow_origins=[
-    "https://regu-lens.vercel.app",
-    "http://localhost:3000",
-    "http://localhost:5173",
-    ],
+    allow_origins=settings.cors_origins if settings.cors_origins else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -43,10 +38,12 @@ app.add_middleware(
 
 app.include_router(documents.router, prefix="/documents", tags=["documents"])
 app.include_router(obligations.router, prefix="/obligations", tags=["obligations"])
+app.include_router(tasks.router, prefix="/tasks", tags=["tasks"])
+app.include_router(evidence.router, prefix="/evidence", tags=["evidence"])
+app.include_router(conflicts.router, prefix="/conflicts", tags=["conflicts"])
+app.include_router(reports.router, prefix="/reports", tags=["reports"])
 
 
 @app.get("/health", tags=["general"])
 def health_check() -> dict[str, str]:
     return {"status": "ok"}
-
-

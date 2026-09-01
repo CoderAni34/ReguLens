@@ -1,8 +1,7 @@
 import React, { useState } from "react";
 
-function Settings() {
+function Settings({ theme = "dark", setTheme }) {
   const [activeSection, setActiveSection] = useState("General");
-  const [saved, setSaved] = useState(false);
 
   const [settings, setSettings] = useState({
     workspaceName: "ReguLens Workspace",
@@ -13,7 +12,6 @@ function Settings() {
     conflictAlerts: true,
     aiSuggestions: true,
     autoAnalysis: true,
-    darkMode: true,
   });
 
   const updateSetting = (key, value) => {
@@ -21,16 +19,6 @@ function Settings() {
       ...settings,
       [key]: value,
     });
-
-    setSaved(false);
-  };
-
-  const handleSave = () => {
-    setSaved(true);
-
-    setTimeout(() => {
-      setSaved(false);
-    }, 3000);
   };
 
   const sections = [
@@ -57,13 +45,6 @@ function Settings() {
             configuration.
           </p>
         </div>
-
-        <button
-          className="primary-btn save-settings-btn"
-          onClick={handleSave}
-        >
-          {saved ? "✓ Saved" : "Save Changes"}
-        </button>
       </div>
 
       <div className="settings-layout">
@@ -263,6 +244,20 @@ function Settings() {
 
               <div className="settings-options">
 
+                <div className="form-group" style={{ marginBottom: "20px" }}>
+                  <label style={{ fontWeight: 600 }}>AI Engine API Key</label>
+                  <p style={{ fontSize: "12px", marginBottom: "8px" }}>
+                    Required for AI regulatory obligation extraction and conflict reasoning. Configure your workspace API credentials below.
+                  </p>
+                  <input
+                    type="password"
+                    placeholder="Enter API Key..."
+                    value={settings.geminiApiKey || ""}
+                    onChange={(e) => updateSetting("geminiApiKey", e.target.value)}
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: "8px" }}
+                  />
+                </div>
+
                 <div className="setting-option">
                   <div>
                     <h3>AI Suggestions</h3>
@@ -382,22 +377,21 @@ function Settings() {
 
                 <div className="setting-option">
                   <div>
-                    <h3>Dark Mode</h3>
+                    <h3>{theme === "dark" ? "Dark Mode" : "Light Mode"}</h3>
 
                     <p>
-                      Use the dark ReguLens interface.
+                      {theme === "dark"
+                        ? "Use the dark ReguLens interface."
+                        : "Use the light ReguLens interface."}
                     </p>
                   </div>
 
                   <label className="switch">
                     <input
                       type="checkbox"
-                      checked={settings.darkMode}
+                      checked={theme === "dark"}
                       onChange={(e) =>
-                        updateSetting(
-                          "darkMode",
-                          e.target.checked
-                        )
+                        setTheme && setTheme(e.target.checked ? "dark" : "light")
                       }
                     />
 

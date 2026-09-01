@@ -63,8 +63,8 @@ function Sidebar({ activePage, setActivePage }) {
           <div className="avatar">A</div>
 
           <div className="user-info">
-            <strong>BANGGG</strong>
-            <span>Admin</span>
+            <strong>ReguLens Admin</strong>
+            <span>Administrator</span>
           </div>
         </div>
 

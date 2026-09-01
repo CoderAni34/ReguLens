@@ -14,6 +14,30 @@ from app.schemas.ai import (
     AIObligation,
     AIResponse,
 )
+from app.schemas.task import (
+    TaskBase,
+    TaskCreate,
+    TaskUpdate,
+    TaskResponse,
+)
+from app.schemas.evidence import (
+    EvidenceBase,
+    EvidenceCreate,
+    EvidenceUpdate,
+    EvidenceResponse,
+)
+from app.schemas.conflict import (
+    ConflictBase,
+    ConflictCreate,
+    ConflictUpdate,
+    ConflictResponse,
+)
+from app.schemas.report import (
+    ReportBase,
+    ReportCreate,
+    ReportGenerateRequest,
+    ReportResponse,
+)
 
 __all__ = [
     "DocumentBase",
@@ -26,4 +50,20 @@ __all__ = [
     "AIDocumentInfo",
     "AIObligation",
     "AIResponse",
+    "TaskBase",
+    "TaskCreate",
+    "TaskUpdate",
+    "TaskResponse",
+    "EvidenceBase",
+    "EvidenceCreate",
+    "EvidenceUpdate",
+    "EvidenceResponse",
+    "ConflictBase",
+    "ConflictCreate",
+    "ConflictUpdate",
+    "ConflictResponse",
+    "ReportBase",
+    "ReportCreate",
+    "ReportGenerateRequest",
+    "ReportResponse",
 ]

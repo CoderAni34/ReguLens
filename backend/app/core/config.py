@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     database_url: str = "sqlite:///./regulens.db"
     gemini_api_key: str | None = None
-    cors_origins: List[str] = [
+    cors_origins: Any = [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",

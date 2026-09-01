@@ -184,19 +184,10 @@ function Documents({ setActivePage, onSelectDocument, setPendingFile }) {
         )}
 
         {!loading && filteredDocuments.length === 0 && (
-          <div style={{
-            padding: "50px 20px",
-            textAlign: "center",
-            background: "rgba(255, 255, 255, 0.02)",
-            borderRadius: "12px",
-            border: "1px dashed rgba(255, 255, 255, 0.1)",
-            margin: "20px 0",
-          }}>
-            <div style={{ fontSize: "36px", marginBottom: "12px" }}>📂</div>
-            <h3 style={{ fontSize: "18px", color: "#f8fafc", marginBottom: "8px" }}>
-              No documents in your library yet.
-            </h3>
-            <p style={{ color: "#94a3b8", fontSize: "14px", maxWidth: "450px", margin: "0 auto 20px" }}>
+          <div className="empty-state">
+            <div className="empty-state-icon">📂</div>
+            <h3>No documents in your library yet.</h3>
+            <p style={{ fontSize: "14px", maxWidth: "450px", margin: "0 auto 20px" }}>
               Upload your first regulatory document or circular to begin automated AI compliance analysis.
             </p>
             {setActivePage && (

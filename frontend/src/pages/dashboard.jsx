@@ -1,9 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { getDocuments, getObligations } from "../services/api";
+import {
+  getDocuments,
+  getObligations,
+  getTasks,
+  getConflicts,
+  getEvidenceList,
+} from "../services/api";
 
 function Dashboard({ setActivePage, onSelectDocument }) {
   const [documents, setDocuments] = useState([]);
   const [obligations, setObligations] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [conflicts, setConflicts] = useState([]);
+  const [evidenceList, setEvidenceList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedDocument, setSelectedDocument] = useState(null);
 
@@ -11,12 +20,18 @@ function Dashboard({ setActivePage, onSelectDocument }) {
     async function loadDashboardData() {
       setLoading(true);
       try {
-        const [docsData, obsData] = await Promise.all([
-          getDocuments(),
-          getObligations(),
+        const [docsData, obsData, tasksData, conflictsData, evidenceData] = await Promise.all([
+          getDocuments().catch(() => []),
+          getObligations().catch(() => []),
+          getTasks().catch(() => []),
+          getConflicts().catch(() => []),
+          getEvidenceList().catch(() => []),
         ]);
         setDocuments(docsData || []);
         setObligations(obsData || []);
+        setTasks(tasksData || []);
+        setConflicts(conflictsData || []);
+        setEvidenceList(evidenceData || []);
       } catch (err) {
         console.warn("Failed to load live dashboard data:", err);
       } finally {
@@ -53,7 +68,18 @@ function Dashboard({ setActivePage, onSelectDocument }) {
     (d) => (d.processing_status || "").toLowerCase() === "completed"
   ).length;
 
-  // Format uploaded timestamp
+  const todoTasksCount = tasks.filter(
+    (t) => (t.status || "").toLowerCase() === "to do"
+  ).length;
+
+  const activeConflictsCount = conflicts.filter(
+    (c) => (c.status || "").toLowerCase() === "unresolved"
+  ).length;
+
+  const highConflictsCount = conflicts.filter(
+    (c) => (c.status || "").toLowerCase() === "unresolved" && (c.severity || "").toLowerCase() === "high"
+  ).length;
+
   const formatUploadDate = (dateStr) => {
     if (!dateStr) return "Recently";
     try {
@@ -110,10 +136,28 @@ function Dashboard({ setActivePage, onSelectDocument }) {
         </button>
 
         <button
+          className="stat-card clickable-card"
+          onClick={() => setActivePage("Tasks")}
+        >
+          <p>TASKS TO DO</p>
+          <h2>{todoTasksCount}</h2>
+          <span className="muted">{tasks.length} total tasks derived</span>
+        </button>
+
+        <button
+          className="stat-card clickable-card"
+          onClick={() => setActivePage("Conflicts")}
+        >
+          <p>ACTIVE CONFLICTS</p>
+          <h2>{activeConflictsCount}</h2>
+          <span className="muted">{highConflictsCount} high severity</span>
+        </button>
+
+        <button
           className="stat-card warning-card clickable-card"
           onClick={() => setActivePage("Obligations")}
         >
-          <p>HIGH PRIORITY ITEMS</p>
+          <p>HIGH PRIORITY OBLIGATIONS</p>
           <h2>
             {obligations.filter((o) => (o.priority || "").toLowerCase() === "high").length}
           </h2>
@@ -140,18 +184,16 @@ function Dashboard({ setActivePage, onSelectDocument }) {
               Loading compliance documents...
             </div>
           ) : documents.length === 0 ? (
-            <div style={{
-              padding: "40px 20px",
-              textAlign: "center",
-              color: "#94a3b8",
-            }}>
-              <p style={{ marginBottom: "12px" }}>No documents uploaded yet.</p>
+            <div className="empty-state">
+              <div className="empty-state-icon">📂</div>
+              <h3>No documents uploaded yet.</h3>
+              <p>Upload a regulatory circular or policy document to begin compliance analysis.</p>
               <button
                 className="primary-btn"
                 onClick={() => setActivePage("Upload")}
-                style={{ padding: "8px 16px", fontSize: "13px" }}
+                style={{ padding: "10px 24px" }}
               >
-                Upload First Regulatory PDF
+                + Upload First Regulatory PDF
               </button>
             </div>
           ) : (

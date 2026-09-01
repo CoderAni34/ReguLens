@@ -4,6 +4,7 @@ ReguLens AI Service Module
 Production-grade compliance extraction engine using Google Gemini.
 Extracts regulatory compliance obligations, deadlines, responsible units,
 evidence, and source references from PDF circulars.
+Also handles cross-document conflict detection and executive summary synthesis.
 """
 import asyncio
 import os
@@ -21,18 +22,38 @@ from app.core.config import settings
 
 logger = logging.getLogger("ReguLens.AI")
 
-# Auto-fallback Gemini Model Hierarchy
+# Auto-fallback Gemini Model Hierarchy (Current Google Gemini Models)
 FALLBACK_MODELS = [
-    "models/gemini-3.6-flash",
-    "models/gemini-3.7-flash",
-    "models/gemini-3.5-flash",
-    "models/gemini-flash-latest",
-    "models/gemini-3-flash-preview",
+    "gemini-3.6-flash",
+    "gemini-3.7-flash",
+    "gemini-3.5-flash",
+    "gemini-flash-latest",
+    "gemini-3-flash-preview",
 ]
 
 MAX_PDF_CHARS = 200000
 MIN_PDF_CHARS = 500
 MAX_RETRIES = 3
+
+
+def sanitize_api_key(key: Optional[str]) -> Optional[str]:
+    """Sanitize API key by stripping quotes, whitespace, and placeholder strings."""
+    if not key:
+        return None
+    cleaned = key.strip().strip("'\"")
+    if cleaned.lower() in ["your_gemini_api_key_here", "your_gemini_api_key", "none", "null", ""]:
+        return None
+    return cleaned
+
+
+def get_key_diagnostics(key: Optional[str]) -> Dict[str, Any]:
+    """Return safe non-sensitive key diagnostic metadata."""
+    cleaned = sanitize_api_key(key)
+    if not cleaned:
+        return {"present": False, "length": 0, "fingerprint": "None"}
+    fp = f"{cleaned[:4]}...{cleaned[-4:]}" if len(cleaned) >= 8 else "invalid"
+    return {"present": True, "length": len(cleaned), "fingerprint": fp}
+
 
 EXTRACTION_PROMPT_TEMPLATE = """You are an expert compliance analyst for Indian regulatory frameworks (UGC, AICTE, NAAC, Ministry of Education).
 
@@ -69,16 +90,66 @@ DOCUMENT:
 {document_text}"""
 
 
+CONFLICT_PROMPT_TEMPLATE = """You are a senior regulatory compliance auditor. Compare the compliance obligations extracted from two regulatory documents and identify any genuine contradictions, conflicting deadlines, conflicting requirements, or duplicate rules.
+
+DOCUMENT A (Title: "{doc_a_title}", ID: {doc_a_id}):
+{doc_a_obligations}
+
+DOCUMENT B (Title: "{doc_b_title}", ID: {doc_b_id}):
+{doc_b_obligations}
+
+Rules for output:
+1. Return ONLY a JSON array. No conversational text, no preamble, no markdown formatting.
+2. If there are NO conflicts or contradictions between these two documents, return an empty JSON array: []
+3. DO NOT invent conflicts if both documents can be peacefully satisfied.
+4. Every conflict item MUST contain the exact source quotes and page numbers from both documents.
+
+Schema for each conflict object in the array:
+[
+  {{
+    "conflict_type": "Deadline Conflict / Requirement Conflict / Duplicate Requirement / Missing Information",
+    "title": "Short descriptive title of the conflict",
+    "description": "Detailed explanation of why Document A and Document B conflict",
+    "severity": "High / Medium / Low",
+    "obligation_a_id": 1,
+    "obligation_b_id": 2,
+    "page_a": 1,
+    "page_b": 1,
+    "source_text_a": "Exact text quote from Document A",
+    "source_text_b": "Exact text quote from Document B",
+    "recommendation": "Suggested action to resolve the conflict"
+  }}
+]"""
+
+
+SUMMARY_PROMPT_TEMPLATE = """You are an executive compliance reporter. Write a concise, professional executive summary based STRICTLY on the following factual compliance database metrics:
+
+{metrics_json}
+
+Rules:
+1. Do NOT invent any statistics or numbers that are not explicitly provided in the metrics.
+2. Keep the summary under 200 words, formatted in clear professional prose.
+3. Highlight overall compliance health, completed tasks, pending items, and any high-risk conflicts.
+"""
+
+
 class RegulatoryAIEngine:
     """
-    Core AI Extraction Engine using Google Gemini with dynamic model failover.
+    Core AI Extraction & Reasoning Engine using Google Gemini with dynamic model failover.
     """
 
     def __init__(self, api_key: Optional[str] = None):
-        self.api_key = api_key or getattr(settings, "gemini_api_key", None) or os.getenv("GEMINI_API_KEY")
+        raw_key = api_key or getattr(settings, "gemini_api_key", None) or os.getenv("GEMINI_API_KEY")
+        self.api_key = sanitize_api_key(raw_key)
+        diag = get_key_diagnostics(self.api_key)
+        
         if not self.api_key:
-            logger.warning("GEMINI_API_KEY is not configured. Real API calls will fail unless provided.")
+            logger.warning(
+                f"GEMINI_API_KEY is not configured or invalid placeholder. "
+                f"Diagnostics: {diag}. Real AI API calls will fail until a valid key is set."
+            )
         else:
+            logger.info(f"Gemini AI Engine initialized with key diagnostics: {diag}")
             genai.configure(api_key=self.api_key)
 
     def extract_text_from_pdf(self, pdf_path: str) -> Tuple[str, int]:
@@ -101,59 +172,69 @@ class RegulatoryAIEngine:
 
     def _call_gemini_with_fallback(self, prompt: str) -> str:
         """
-        Calls Gemini API with automatic model failover across:
-        gemini-3-flash-preview -> gemini-3.6-flash -> gemini-3.5-flash -> gemini-flash-latest
+        Calls Gemini API with automatic model failover across fallback models.
         Handles 429 quota exhaustion and 404 model retirement gracefully.
         """
         if not self.api_key:
-            self.api_key = os.getenv("GEMINI_API_KEY") or getattr(settings, "gemini_api_key", None)
+            raw_key = os.getenv("GEMINI_API_KEY") or getattr(settings, "gemini_api_key", None)
+            self.api_key = sanitize_api_key(raw_key)
             if not self.api_key:
-                raise ValueError("GEMINI_API_KEY is missing. Please set it in your environment or .env file.")
+                raise ValueError(
+                    "GEMINI_API_KEY is missing or set to placeholder. Please set a valid Gemini API key in your .env file."
+                )
             genai.configure(api_key=self.api_key)
 
         last_exception = None
 
-        for model_name in FALLBACK_MODELS:
-            try:
-                model = genai.GenerativeModel(model_name)
-                for attempt in range(1, MAX_RETRIES + 1):
-                    try:
-                        logger.info(f"Querying Gemini model '{model_name}' (attempt {attempt}/{MAX_RETRIES})...")
-                        response = model.generate_content(prompt)
-                        if response and response.text:
-                            logger.info(f"Successful response received from '{model_name}'.")
-                            return response.text
-                        raise ValueError("Empty response payload from Gemini API.")
-                    # except Exception as exc:
-                    #     err = str(exc)
-                    #     last_exception = exc
-                    #     logger.warning(f"Attempt {attempt} failed on '{model_name}': {err[:150]}")
-                    except Exception as exc:
-                        err = str(exc)
-                        last_exception = exc
-                        logger.exception(
-                            f"Gemini request failed on model '{model_name}' "
-                            f"(attempt {attempt}/{MAX_RETRIES}): {err}"
-                        )
-                        
-                        # Handle 429 rate limit or 404 retired model by failing over to next model
-                        if "429" in err or "quota" in err.lower() or "ResourceExhausted" in err:
-                            logger.info(f"Quota threshold reached on '{model_name}'. Rotating to next fallback model...")
-                            break
-                        if "404" in err or "not found" in err.lower():
-                            logger.info(f"Model '{model_name}' unavailable. Rotating to next fallback model...")
-                            break
-                        time.sleep(2 * attempt)
-            except Exception as outer_exc:
-                last_exception = outer_exc
-                continue
+        for raw_model in FALLBACK_MODELS:
+            candidates = [raw_model]
+            if not raw_model.startswith("models/"):
+                candidates.append(f"models/{raw_model}")
 
-        raise RuntimeError(f"All Gemini model fallbacks exhausted. Last error: {last_exception}")
+            for model_name in candidates:
+                try:
+                    model = genai.GenerativeModel(model_name)
+                    for attempt in range(1, MAX_RETRIES + 1):
+                        try:
+                            logger.info(f"Querying Gemini model '{model_name}' (attempt {attempt}/{MAX_RETRIES})...")
+                            response = model.generate_content(prompt)
+                            if response and response.text:
+                                logger.info(f"Successful response received from '{model_name}'.")
+                                return response.text
+                            raise ValueError("Empty response payload from Gemini API.")
+                        except Exception as exc:
+                            err = str(exc)
+                            last_exception = exc
+                            logger.warning(
+                                f"Gemini request failed on model '{model_name}' "
+                                f"(attempt {attempt}/{MAX_RETRIES}): {err}"
+                            )
+                            
+                            if "429" in err or "quota" in err.lower() or "ResourceExhausted" in err:
+                                logger.info(f"Quota threshold reached on '{model_name}'. Rotating to next fallback model...")
+                                break
+                            if "404" in err or "not found" in err.lower() or "not available" in err.lower():
+                                logger.info(f"Model '{model_name}' unavailable. Rotating to next fallback model...")
+                                break
+                            if "400" in err or "API_KEY_INVALID" in err or "API key not valid" in err:
+                                logger.error(f"AI Engine Key Authentication Failure: {err}")
+                                raise ValueError(
+                                    "AI Compliance Engine API Key authentication failed. Please verify your API key in workspace settings or .env file."
+                                )
+                            time.sleep(2 * attempt)
+                except Exception as outer_exc:
+                    if isinstance(outer_exc, ValueError) and "API Key authentication failed" in str(outer_exc):
+                        raise outer_exc
+                    last_exception = outer_exc
+                    continue
+
+        logger.error(f"All AI Engine fallbacks exhausted. Last error: {last_exception}")
+        raise RuntimeError("AI Compliance Engine is temporarily unavailable. Please try again.")
 
     def sanitize_and_parse_json(self, raw_response: str) -> List[Dict[str, Any]]:
         """
-        Sanitizes raw LLM output, removes markdown wrappers, fixes invalid numeric ranges
-        like '34-35', eliminates trailing commas, and handles unescaped characters.
+        Sanitizes raw LLM output, removes markdown wrappers, fixes invalid numeric ranges,
+        eliminates trailing commas, and handles unescaped characters.
         """
         text = raw_response.strip()
 
@@ -162,260 +243,193 @@ class RegulatoryAIEngine:
             match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
             if match:
                 text = match.group(1).strip()
+            else:
+                text = re.sub(r"^```(?:json)?|```$", "", text, flags=re.MULTILINE).strip()
 
-        # Extract JSON array boundaries
+        # Find starting bracket of JSON array
         start_idx = text.find("[")
         end_idx = text.rfind("]")
+
         if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
             text = text[start_idx : end_idx + 1]
 
-        # Fix unquoted page ranges: "page_number": 34-35 -> "page_number": 34
-        text = re.sub(r'("page_number"\s*:\s*)(\d+)\s*[-–—]\s*\d+', r"\1\2", text)
-        # Fix string numbers: "page_number": "34" -> "page_number": 34
-        text = re.sub(r'("page_number"\s*:\s*)"(\d+)"', r"\1\2", text)
-        # Fix trailing commas before closing braces/brackets
-        text = re.sub(r',\s*([\]\}])', r"\1", text)
+        # Fix common LLM JSON syntax errors: trailing commas before closing brackets
+        text = re.sub(r",\s*([\]}])", r"\1", text)
 
         try:
-            data = json.loads(text)
+            parsed = json.loads(text)
+            if isinstance(parsed, list):
+                return parsed
+            elif isinstance(parsed, dict):
+                return [parsed]
+            else:
+                raise ValueError("Parsed JSON is neither list nor dict")
         except Exception:
-            text_fixed = re.sub(r'[\x00-\x1f]', lambda m: ' ' if m.group(0) not in '\r\n\t' else m.group(0), text)
-            data = json.loads(text_fixed)
+            pass
 
-        if not isinstance(data, list):
-            if isinstance(data, dict):
-                for v in data.values():
-                    if isinstance(v, list):
-                        return v
-                return [data]
+        # Robust regex-based fallback parser
+        items = []
+        object_blocks = re.findall(r"\{[^{}]*\}", text)
+
+        for block in object_blocks:
+            cleaned_block = re.sub(r",\s*\}", "}", block)
+            try:
+                item = json.loads(cleaned_block)
+                items.append(item)
+            except Exception:
+                pass
+
+        if items:
+            return items
+
+        raise ValueError(f"Could not parse valid JSON from AI response snippet: {text[:200]}")
+
+    async def analyze_document_text(self, document_text: str, document_title: str = "Uploaded Document") -> AIResponse:
+        """
+        Extracts obligations from text content and returns validated AIResponse.
+        """
+        if not document_text or len(document_text.strip()) < MIN_PDF_CHARS:
+            raise ValueError(
+                f"Document text too short ({len(document_text.strip()) if document_text else 0} chars). "
+                f"Minimum required is {MIN_PDF_CHARS} characters."
+            )
+
+        truncated_text = document_text[:MAX_PDF_CHARS]
+        prompt = EXTRACTION_PROMPT_TEMPLATE.format(document_text=truncated_text)
+
+        raw_json_str = await asyncio.to_thread(self._call_gemini_with_fallback, prompt)
+        parsed_items = self.sanitize_and_parse_json(raw_json_str)
+
+        valid_categories = {"Academic", "Financial", "HR", "Compliance", "Research", "Student Welfare", "Other"}
+        valid_priorities = {"High", "Medium", "Low"}
+
+        obligations: List[AIObligation] = []
+
+        for item in parsed_items:
+            cat = str(item.get("category", "Compliance")).strip()
+            if cat not in valid_categories:
+                cat = "Compliance"
+
+            prio = str(item.get("priority", "Medium")).strip().capitalize()
+            if prio not in valid_priorities:
+                prio = "Medium"
+
+            page = item.get("page_number", 1)
+            try:
+                page_int = int(page) if page is not None else 1
+            except (ValueError, TypeError):
+                page_int = 1
+
+            conf = item.get("confidence", 0.9)
+            try:
+                conf_float = float(conf)
+                conf_float = max(0.0, min(1.0, conf_float))
+            except (ValueError, TypeError):
+                conf_float = 0.9
+
+            obs = AIObligation(
+                title=str(item.get("title", "Untitled Obligation")).strip(),
+                description=str(item.get("description", "No description provided.")).strip(),
+                responsible_unit=str(item.get("responsible_unit", "Not specified")).strip(),
+                deadline=str(item.get("deadline", "Not specified")).strip(),
+                evidence_required=str(item.get("evidence_required", "Not specified")).strip(),
+                penalty=str(item.get("penalty", "Not specified")).strip(),
+                category=cat,
+                priority=prio,
+                source_text=str(item.get("source_text", "Direct citation missing.")).strip(),
+                source_page=page_int,
+                confidence=conf_float,
+            )
+            obligations.append(obs)
+
+        doc_info = AIDocumentInfo(
+            title=document_title,
+            document_type="Regulatory Circular",
+            language="en",
+            version="1.0",
+        )
+
+        return AIResponse(document=doc_info, obligations=obligations)
+
+    async def detect_conflicts(
+        self,
+        doc_a_id: int,
+        doc_a_title: str,
+        doc_a_obligations: List[Dict[str, Any]],
+        doc_b_id: int,
+        doc_b_title: str,
+        doc_b_obligations: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """
+        Compares obligations extracted from Document A and Document B using Gemini AI reasoning.
+        Returns a list of detected conflict dictionary objects.
+        """
+        if not doc_a_obligations or not doc_b_obligations:
             return []
 
-        return data
-
-    def extract_obligations(self, pdf_text: str) -> List[Dict[str, Any]]:
-        """
-        Core extraction interface taking document text and returning structured obligation dictionaries.
-        """
-        if len(pdf_text.strip()) < MIN_PDF_CHARS:
-            raise ValueError(f"Extracted text too short ({len(pdf_text)} chars). Document may be a scanned image.")
-
-        if len(pdf_text) > MAX_PDF_CHARS:
-            pdf_text = pdf_text[:MAX_PDF_CHARS]
-
-        prompt = EXTRACTION_PROMPT_TEMPLATE.format(document_text=pdf_text)
-        raw_response = self._call_gemini_with_fallback(prompt)
-        return self.sanitize_and_parse_json(raw_response)
-
-
-# Singleton AI engine
-ai_engine = RegulatoryAIEngine()
-
-
-# async def analyze_document(document_id: int, file_path: Optional[str] = None) -> AIResponse:
-#     """
-#     Main endpoint integration called by POST /documents/{document_id}/analyze.
-#     Extracts text from the uploaded PDF, processes with Gemini, and constructs an AIResponse.
-#     """
-#     # Resolve file path if not passed explicitly
-#     if not file_path:
-#         upload_dir = "uploads"
-#         if os.path.exists(upload_dir):
-#             files = [os.path.join(upload_dir, f) for f in os.listdir(upload_dir) if os.path.isfile(os.path.join(upload_dir, f))]
-#             file_path = files[0] if files else None
-
-#     if not file_path or not os.path.exists(file_path):
-#         raise FileNotFoundError(f"PDF file for document ID {document_id} was not found on disk at '{file_path}'.")
-
-#     # 1. Extract text
-#     text, page_count = ai_engine.extract_text_from_pdf(file_path)
-
-#     # 2. Extract obligations via Gemini
-#     raw_obligations = ai_engine.extract_obligations(text)
-
-#     # 3. Build AIDocumentInfo
-#     doc_title = os.path.splitext(os.path.basename(file_path))[0].replace("_", " ")
-#     doc_info = AIDocumentInfo(
-#         title=doc_title,
-#         document_type="Regulatory Policy / Circular",
-#         language="en",
-#         version="1.0"
-#     )
-
-#     # 4. Construct AIObligation schemas
-#     pydantic_obligations: List[AIObligation] = []
-#     for item in raw_obligations:
-#         desc = str(item.get("description") or item.get("obligation") or "Not specified").strip()
-#         title = str(item.get("title") or (desc[:60] + "..." if len(desc) > 60 else desc)).strip()
-#         resp_unit = item.get("responsible_unit") or "Not specified"
-#         deadline = item.get("deadline") or "Not specified"
-#         evidence = item.get("evidence_required") or "Not specified"
-#         penalty = item.get("penalty")
-#         if penalty and str(penalty).lower() == "not specified":
-#             penalty = None
-        
-#         category = item.get("category")
-#         if category and str(category).lower() == "not specified":
-#             category = None
-            
-#         priority = item.get("priority")
-#         if priority and str(priority).lower() == "not specified":
-#             priority = None
-            
-#         source_text = item.get("source_text") or desc
-
-#         p_val = item.get("page_number") or item.get("source_page") or 1
-#         try:
-#             match = re.search(r"\d+", str(p_val))
-#             source_page = int(match.group(0)) if match else 1
-#         except Exception:
-#             source_page = 1
-
-#         try:
-#             confidence = float(item.get("confidence", 0.95))
-#             confidence = max(0.0, min(1.0, confidence))
-#         except Exception:
-#             confidence = 0.95
-
-#         obligation_obj = AIObligation(
-#             title=title,
-#             description=desc,
-#             responsible_unit=resp_unit,
-#             deadline=deadline,
-#             evidence_required=evidence,
-#             penalty=penalty,
-#             category=category,
-#             priority=priority,
-#             source_text=source_text,
-#             source_page=source_page,
-#             confidence=confidence
-#         )
-#         pydantic_obligations.append(obligation_obj)
-
-#     return AIResponse(
-#         document=doc_info,
-#         obligations=pydantic_obligations
-#     )
-async def analyze_document(
-    document_id: int,
-    file_path: Optional[str] = None
-) -> AIResponse:
-
-    # Resolve file path if not passed explicitly
-    if not file_path:
-        upload_dir = "uploads"
-
-        if os.path.exists(upload_dir):
-            files = [
-                os.path.join(upload_dir, f)
-                for f in os.listdir(upload_dir)
-                if os.path.isfile(os.path.join(upload_dir, f))
-            ]
-
-            file_path = files[0] if files else None
-
-    if not file_path or not os.path.exists(file_path):
-        raise FileNotFoundError(
-            f"PDF file for document ID {document_id} "
-            f"was not found on disk at '{file_path}'."
+        prompt = CONFLICT_PROMPT_TEMPLATE.format(
+            doc_a_id=doc_a_id,
+            doc_a_title=doc_a_title,
+            doc_a_obligations=json.dumps(doc_a_obligations, indent=2),
+            doc_b_id=doc_b_id,
+            doc_b_title=doc_b_title,
+            doc_b_obligations=json.dumps(doc_b_obligations, indent=2),
         )
 
-    logger.info(f"Starting analysis for document {document_id}")
+        raw_json_str = await asyncio.to_thread(self._call_gemini_with_fallback, prompt)
+        parsed_conflicts = self.sanitize_and_parse_json(raw_json_str)
+        return parsed_conflicts
 
-    # Run blocking PDF extraction in a separate thread
-    text, page_count = await asyncio.to_thread(
-        ai_engine.extract_text_from_pdf,
-        file_path
+    async def generate_executive_summary(self, metrics_dict: Dict[str, Any]) -> str:
+        """
+        Generates a factual executive summary based strictly on provided database metrics.
+        """
+        prompt = SUMMARY_PROMPT_TEMPLATE.format(metrics_json=json.dumps(metrics_dict, indent=2))
+        return await asyncio.to_thread(self._call_gemini_with_fallback, prompt)
+
+
+# Default singleton instance using config settings
+_ai_engine: Optional[RegulatoryAIEngine] = None
+
+
+def get_ai_engine() -> RegulatoryAIEngine:
+    global _ai_engine
+    if _ai_engine is None:
+        _ai_engine = RegulatoryAIEngine()
+    return _ai_engine
+
+
+async def analyze_document(document_id: int, file_path: str) -> AIResponse:
+    """
+    Public entry point for PDF analysis.
+    Extracts text via PyMuPDF and calls RegulatoryAIEngine.
+    """
+    engine = get_ai_engine()
+    text, page_count = engine.extract_text_from_pdf(file_path)
+    title = os.path.basename(file_path)
+    return await engine.analyze_document_text(text, document_title=title)
+
+
+async def run_ai_conflict_detection(
+    doc_a_id: int,
+    doc_a_title: str,
+    doc_a_obligations: List[Dict[str, Any]],
+    doc_b_id: int,
+    doc_b_title: str,
+    doc_b_obligations: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """
+    Public entry point for AI conflict detection between two documents.
+    """
+    engine = get_ai_engine()
+    return await engine.detect_conflicts(
+        doc_a_id, doc_a_title, doc_a_obligations, doc_b_id, doc_b_title, doc_b_obligations
     )
 
-    logger.info(
-        f"Extracted {len(text)} characters from {page_count} pages"
-    )
 
-    # Run blocking Gemini API call in a separate thread
-    raw_obligations = await asyncio.to_thread(
-        ai_engine.extract_obligations,
-        text
-    )
-
-    logger.info(
-        f"Gemini returned {len(raw_obligations)} obligations"
-    )
-
-    doc_title = (
-        os.path.splitext(os.path.basename(file_path))[0]
-        .replace("_", " ")
-    )
-
-    doc_info = AIDocumentInfo(
-        title=doc_title,
-        document_type="Regulatory Policy / Circular",
-        language="en",
-        version="1.0",
-    )
-
-    pydantic_obligations: List[AIObligation] = []
-
-    for item in raw_obligations:
-        desc = str(
-            item.get("description")
-            or item.get("obligation")
-            or "Not specified"
-        ).strip()
-
-        title = str(
-            item.get("title")
-            or (desc[:60] + "..." if len(desc) > 60 else desc)
-        ).strip()
-
-        resp_unit = item.get("responsible_unit") or "Not specified"
-        deadline = item.get("deadline") or "Not specified"
-        evidence = item.get("evidence_required") or "Not specified"
-
-        penalty = item.get("penalty")
-        if penalty and str(penalty).lower() == "not specified":
-            penalty = None
-
-        category = item.get("category")
-        if category and str(category).lower() == "not specified":
-            category = None
-
-        priority = item.get("priority")
-        if priority and str(priority).lower() == "not specified":
-            priority = None
-
-        source_text = item.get("source_text") or desc
-
-        p_val = item.get("page_number") or item.get("source_page") or 1
-
-        try:
-            match = re.search(r"\d+", str(p_val))
-            source_page = int(match.group(0)) if match else 1
-        except Exception:
-            source_page = 1
-
-        try:
-            confidence = float(item.get("confidence", 0.95))
-            confidence = max(0.0, min(1.0, confidence))
-        except Exception:
-            confidence = 0.95
-
-        pydantic_obligations.append(
-            AIObligation(
-                title=title,
-                description=desc,
-                responsible_unit=resp_unit,
-                deadline=deadline,
-                evidence_required=evidence,
-                penalty=penalty,
-                category=category,
-                priority=priority,
-                source_text=source_text,
-                source_page=source_page,
-                confidence=confidence,
-            )
-        )
-
-    return AIResponse(
-        document=doc_info,
-        obligations=pydantic_obligations,
-    )
+async def run_ai_executive_summary(metrics_dict: Dict[str, Any]) -> str:
+    """
+    Public entry point for generating AI executive summary from metrics.
+    """
+    engine = get_ai_engine()
+    return await engine.generate_executive_summary(metrics_dict)

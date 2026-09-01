@@ -356,19 +356,10 @@ function Obligations({ currentDocument, setCurrentDocument, setActivePage }) {
 
         {/* EMPTY STATE */}
         {!loading && filteredObligations.length === 0 && (
-          <div style={{
-            padding: "50px 20px",
-            textAlign: "center",
-            background: "rgba(255, 255, 255, 0.02)",
-            borderRadius: "12px",
-            border: "1px dashed rgba(255, 255, 255, 0.1)",
-            margin: "20px 0",
-          }}>
-            <div style={{ fontSize: "36px", marginBottom: "12px" }}>📋</div>
-            <h3 style={{ fontSize: "18px", color: "#f8fafc", marginBottom: "8px" }}>
-              No analyzed obligations available yet.
-            </h3>
-            <p style={{ color: "#94a3b8", fontSize: "14px", maxWidth: "450px", margin: "0 auto 20px" }}>
+          <div className="empty-state">
+            <div className="empty-state-icon">📋</div>
+            <h3>No analyzed obligations available yet.</h3>
+            <p style={{ fontSize: "14px", maxWidth: "450px", margin: "0 auto 20px" }}>
               Upload a regulatory circular or compliance policy document to extract obligations automatically with AI.
             </p>
             {setActivePage && (
